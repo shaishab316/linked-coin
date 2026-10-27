@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createTransactionAction } from "../actions";
 import { SUPPORTED_CURRENCIES, DEFAULT_CURRENCY } from "../../../lib/money/money";
+import { useI18n } from "../../../lib/i18n/context";
 import type { Account, Person, Tag } from "../../../db/schema";
 
 interface TransactionFormProps {
@@ -20,6 +21,7 @@ export function TransactionForm({
   initialType = "expense",
 }: TransactionFormProps) {
   const router = useRouter();
+  const { locale, t } = useI18n();
   const [type, setType] = useState<string>(initialType);
   const [currency, setCurrency] = useState<string>(DEFAULT_CURRENCY);
   const [error, setError] = useState<string | null>(null);
@@ -40,36 +42,38 @@ export function TransactionForm({
       setError(res.error);
       setIsLoading(false);
     } else {
-      router.push("/transactions");
+      router.push(`/${locale}/transactions`);
     }
   }
 
   const filteredAccounts = accounts.filter((a) => a.currency === currency);
 
+  const typeOptions = [
+    { label: t.transactionForm.typeExpense, value: "expense", short: t.dashboard.addExpense },
+    { label: t.transactionForm.typeIncome, value: "income", short: t.dashboard.addIncome },
+    { label: t.transactionForm.typeTransfer, value: "transfer", short: t.dashboard.transfer },
+    { label: t.transactionForm.typeLoanGiven, value: "loan_given", short: t.people.giveLoan },
+    { label: t.transactionForm.typeLoanReceived, value: "loan_received", short: t.people.receiveLoan },
+    { label: t.transactionForm.typeRepaymentReceived, value: "repayment_received", short: t.people.recordRepayment },
+    { label: t.transactionForm.typeRepaymentMade, value: "repayment_made", short: t.people.youOwe },
+  ];
+
   return (
-    <div className="glass-panel p-6 md:p-8 rounded-2xl max-w-2xl mx-auto border border-white/10">
+    <div className="glass-panel p-6 md:p-8 rounded-3xl max-w-2xl mx-auto border border-white/10 shadow-2xl">
       {/* Type Selector Tabs */}
-      <div className="flex flex-wrap gap-1.5 p-1 bg-slate-900/80 rounded-xl mb-6 border border-white/5">
-        {[
-          { label: "Expense", value: "expense" },
-          { label: "Income", value: "income" },
-          { label: "Transfer", value: "transfer" },
-          { label: "Lend Money", value: "loan_given" },
-          { label: "Borrow Money", value: "loan_received" },
-          { label: "Repayment Recv", value: "repayment_received" },
-          { label: "Repay Debt", value: "repayment_made" },
-        ].map((t) => (
+      <div className="flex flex-wrap gap-1.5 p-1 bg-slate-900/80 rounded-2xl mb-6 border border-white/5">
+        {typeOptions.map((opt) => (
           <button
-            key={t.value}
+            key={opt.value}
             type="button"
-            onClick={() => setType(t.value)}
-            className={`flex-1 min-w-[100px] py-2 px-3 rounded-lg text-xs font-bold transition ${
-              type === t.value
+            onClick={() => setType(opt.value)}
+            className={`flex-1 min-w-[120px] py-2 px-3 rounded-xl text-xs font-bold transition cursor-pointer ${
+              type === opt.value
                 ? "bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20"
                 : "text-slate-400 hover:text-white"
             }`}
           >
-            {t.label}
+            {opt.short}
           </button>
         ))}
       </div>

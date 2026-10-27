@@ -69,10 +69,12 @@ export async function signOut() {
   await revokeCurrentSession();
 }
 
+import { redirect } from "next/navigation";
+
 export async function requireUser() {
   const user = await getSessionUser();
   if (!user) {
-    throw AppError.unauthorized("You must be signed in to perform this action");
+    redirect("/sign-in");
   }
   return user;
 }
