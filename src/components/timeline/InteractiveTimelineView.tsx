@@ -133,6 +133,7 @@ export function InteractiveTimelineView({
           icon: ArrowDownLeft,
           color: "text-emerald-400 bg-emerald-500/15 border-emerald-500/30",
           nodeColor: "bg-emerald-500",
+          accentBorder: "border-l-4 border-l-emerald-500",
           badgeColor: "bg-emerald-500/20 text-emerald-300",
           amountColor: "text-emerald-400",
           sign: "+",
@@ -143,6 +144,7 @@ export function InteractiveTimelineView({
           icon: ArrowUpRight,
           color: "text-rose-400 bg-rose-500/15 border-rose-500/30",
           nodeColor: "bg-rose-500",
+          accentBorder: "border-l-4 border-l-rose-500",
           badgeColor: "bg-rose-500/20 text-rose-300",
           amountColor: "text-rose-400",
           sign: "-",
@@ -150,20 +152,22 @@ export function InteractiveTimelineView({
       case "transfer":
         return {
           icon: ArrowLeftRight,
-          color: "text-blue-400 bg-blue-500/15 border-blue-500/30",
-          nodeColor: "bg-blue-500",
-          badgeColor: "bg-blue-500/20 text-blue-300",
-          amountColor: "text-blue-400",
+          color: "text-sky-400 bg-sky-500/15 border-sky-500/30",
+          nodeColor: "bg-sky-500",
+          accentBorder: "border-l-4 border-l-sky-500",
+          badgeColor: "bg-sky-500/20 text-sky-300",
+          amountColor: "text-sky-400",
           sign: "",
         };
       case "loan_given":
       case "loan_received":
         return {
           icon: HandCoins,
-          color: "text-amber-400 bg-amber-500/15 border-amber-500/30",
-          nodeColor: "bg-amber-500",
-          badgeColor: "bg-amber-500/20 text-amber-300",
-          amountColor: "text-amber-400",
+          color: "text-purple-400 bg-purple-500/15 border-purple-500/30",
+          nodeColor: "bg-purple-500",
+          accentBorder: "border-l-4 border-l-purple-500",
+          badgeColor: "bg-purple-500/20 text-purple-300",
+          amountColor: "text-purple-400",
           sign: type === "loan_given" ? "-" : "+",
         };
       default:
@@ -171,6 +175,7 @@ export function InteractiveTimelineView({
           icon: RotateCcw,
           color: "text-slate-400 bg-slate-800 border-slate-700",
           nodeColor: "bg-slate-500",
+          accentBorder: "border-l-4 border-l-slate-600",
           badgeColor: "bg-slate-800 text-slate-300",
           amountColor: "text-slate-300",
           sign: "",
@@ -301,12 +306,12 @@ export function InteractiveTimelineView({
                       {/* Transaction Interactive Card */}
                       <div
                         onClick={() => setExpandedId(isExpanded ? null : tx.id)}
-                        className={`cursor-pointer rounded-2xl border transition-all duration-200 ${
+                        className={`cursor-pointer rounded-2xl border transition-all duration-200 ${visual.accentBorder} ${
                           isSelected
                             ? "border-emerald-500/60 bg-emerald-950/20 shadow-lg shadow-emerald-950/40"
                             : isReversed
                             ? "border-slate-800/50 bg-slate-900/30 opacity-60"
-                            : "border-slate-800/80 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900 shadow-sm"
+                            : "border-slate-800/80 bg-slate-900/70 hover:border-slate-700 hover:bg-slate-900 shadow-sm"
                         } p-4`}
                       >
                         <div className="flex items-start justify-between gap-3">
@@ -363,10 +368,14 @@ export function InteractiveTimelineView({
                                   ))}
 
                                 {tx.personName && (
-                                  <span className="flex items-center gap-1 rounded-lg bg-amber-500/10 px-2 py-0.5 text-amber-300 border border-amber-500/20">
-                                    <User className="h-3 w-3" />
+                                  <Link
+                                    href={`/${locale}/people`}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="flex items-center gap-1 rounded-lg bg-purple-500/10 px-2 py-0.5 text-purple-300 border border-purple-500/20 hover:bg-purple-500/20 transition"
+                                  >
+                                    <User className="h-3 w-3 text-purple-400" />
                                     {tx.personName}
-                                  </span>
+                                  </Link>
                                 )}
 
                                 <span className="text-[10px] text-slate-500">

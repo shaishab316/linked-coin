@@ -3,6 +3,7 @@ import Link from "next/link";
 import { requireUser } from "../../../../features/auth/service";
 import { listPeople } from "../../../../features/people/service";
 import { CreatePersonDialog } from "../../../../features/people/components/create-person-dialog";
+import { EditPersonDialog } from "../../../../features/people/components/edit-person-dialog";
 import { getDictionary, formatLocalizedAmount, type Locale } from "../../../../lib/i18n";
 import { User, Phone, HandCoins, ArrowDownLeft, ArrowUpRight, Tag as TagIcon } from "lucide-react";
 import { db } from "../../../../db";
@@ -91,12 +92,15 @@ export default async function LocalizedPeoplePage({ params }: LocalizedPeoplePag
                         : t.people.youOwe}
                     </span>
 
-                    {person.contact && (
-                      <span className="flex items-center gap-1 text-xs text-slate-400 truncate max-w-[120px]">
-                        <Phone className="h-3 w-3" />
-                        {person.contact}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {person.contact && (
+                        <span className="flex items-center gap-1 text-xs text-slate-400 truncate max-w-[120px]">
+                          <Phone className="h-3 w-3" />
+                          {person.contact}
+                        </span>
+                      )}
+                      <EditPersonDialog person={person} triggerVariant="icon" />
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-3 mb-2">

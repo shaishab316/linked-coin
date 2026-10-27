@@ -9,6 +9,7 @@ import { listTags, getPersonTagIds } from "../../../../../features/tags/service"
 import { getDictionary, formatLocalizedAmount, type Locale } from "../../../../../lib/i18n";
 import { InteractiveTimelineView } from "../../../../../components/timeline/InteractiveTimelineView";
 import { PersonTagsSection } from "../../../../../features/tags/components/person-tags-section";
+import { EditPersonDialog } from "../../../../../features/people/components/edit-person-dialog";
 import { ArrowLeft, Archive, RotateCcw, HandCoins, ArrowDownLeft, ArrowUpRight, Phone } from "lucide-react";
 
 interface PersonDetailPageProps {
@@ -109,10 +110,13 @@ export default async function LocalizedPersonDetailPage({ params }: PersonDetail
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-800 border border-slate-700 text-slate-100 font-extrabold text-lg">
               {person.name.slice(0, 2).toUpperCase()}
             </div>
-            <div>
-              <h2 className="text-2xl sm:text-3xl font-black text-slate-100">{person.name}</h2>
+            <div className="flex-1">
+              <div className="flex items-center gap-3">
+                <h2 className="text-2xl sm:text-3xl font-black text-slate-100">{person.name}</h2>
+                <EditPersonDialog person={person} triggerVariant="button" />
+              </div>
               {person.contact && (
-                <p className="flex items-center gap-1.5 text-xs text-slate-400 mt-0.5">
+                <p className="flex items-center gap-1.5 text-xs text-slate-400 mt-1">
                   <Phone className="h-3.5 w-3.5" />
                   <span>{person.contact}</span>
                 </p>
