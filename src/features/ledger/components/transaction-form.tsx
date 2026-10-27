@@ -1,265 +1,268 @@
 "use client";
 
-import { useActionState, useState } from "react";
-
-import { FormAlert, FormField, SelectField, SubmitButton, TextareaField } from "@/components/ui/form";
-import { SUPPORTED_CURRENCIES } from "@/lib/money/money";
-
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { createTransactionAction } from "../actions";
-import {
-  COMMAND_TYPE_LABELS,
-  COMMAND_TYPES,
-  type CommandType,
-} from "../validation";
-import type { FormState } from "@/lib/errors/app-error";
+import { SUPPORTED_CURRENCIES, DEFAULT_CURRENCY } from "../../../lib/money/money";
+import type { Account, Person, Tag } from "../../../db/schema";
 
-export type AccountOption = {
-  id: string;
-  name: string;
-  currency: string;
-};
-
-export type PersonOption = {
-  id: string;
-  name: string;
-};
-
-export type TagOption = {
-  id: string;
-  name: string;
-};
-
-export type LoanOptionData = {
-  id: string;
-  kind: "given" | "received";
-  personId: string;
-  personName: string;
-  label: string;
-};
-
-const ACCOUNT_TYPES = new Set<CommandType>([
-  "income",
-  "expense",
-  "transfer",
-  "loan_given",
-  "loan_received",
-  "repayment_received",
-  "repayment_made",
-  "adjustment",
-]);
-
-const PERSON_TYPES = new Set<CommandType>([
-  "loan_given",
-  "loan_received",
-  "repayment_received",
-  "repayment_made",
-]);
+interface TransactionFormProps {
+  accounts: Account[];
+  people: Person[];
+  tags: Tag[];
+  initialType?: string;
+}
 
 export function TransactionForm({
   accounts,
   people,
   tags,
-  loans,
-  defaultType,
-  defaultCurrency,
-  defaultOccurredAt,
-  idempotencyKey,
-}: {
-  accounts: AccountOption[];
-  people: PersonOption[];
-  tags: TagOption[];
-  loans: LoanOptionData[];
-  defaultType: CommandType;
-  defaultCurrency: string;
-  defaultOccurredAt: string;
-  idempotencyKey: string;
-}) {
-  const [state, formAction, pending] = useActionState<FormState, FormData>(
-    createTransactionAction,
-    undefined,
-  );
+  initialType = "expense",
+}: TransactionFormProps) {
+  const router = useRouter();
+  const [type, setType] = useState<string>(initialType);
+  const [currency, setCurrency] = useState<string>(DEFAULT_CURRENCY);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const [type, setType] = useState<CommandType>(defaultType);
-  const [currency, setCurrency] = useState(defaultCurrency);
-  const [personId, setPersonId] = useState("");
+  const availableCurrencies = Object.keys(SUPPORTED_CURRENCIES);
 
-  const matchingAccounts = accounts.filter(
-    (account) => account.currency === currency,
-  );
-  const needsPerson = PERSON_TYPES.has(type);
-  const needsAccount = ACCOUNT_TYPES.has(type);
-  const needsLoan =
-    type === "repayment_received" || type === "repayment_made";
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError(null);
+    setIsLoading(true);
 
-  const loanKind = type === "repayment_received" ? "given" : "received";
-  const matchingLoans = loans.filter(
-    (loan) => loan.kind === loanKind && (!personId || loan.personId === personId),
-  );
+    const formData = new FormData(e.currentTarget);
+    formData.set("type", type);
 
-  const fieldError = (field: string) => state?.fieldErrors?.[field]?.[0];
+    const res = await createTransactionAction(formData);
+    if (res?.error) {
+      setError(res.error);
+      setIsLoading(false);
+    } else {
+      router.push("/transactions");
+    }
+  }
+
+  const filteredAccounts = accounts.filter((a) => a.currency === currency);
 
   return (
-    <form action={formAction} className="space-y-4">
-      {state?.error ? <FormAlert message={state.error} /> : null}
-
-      <input type="hidden" name="idempotencyKey" value={idempotencyKey} />
-
-      <SelectField
-        label="Type"
-        name="type"
-        value={type}
-        onChange={(event) => setType(event.target.value as CommandType)}
-        error={fieldError("type")}
-      >
-        {COMMAND_TYPES.map((option) => (
-          <option key={option} value={option}>
-            {COMMAND_TYPE_LABELS[option]}
-          </option>
+    <div className="glass-panel p-6 md:p-8 rounded-2xl max-w-2xl mx-auto border border-white/10">
+      {/* Type Selector Tabs */}
+      <div className="flex flex-wrap gap-1.5 p-1 bg-slate-900/80 rounded-xl mb-6 border border-white/5">
+        {[
+          { label: "Expense", value: "expense" },
+          { label: "Income", value: "income" },
+          { label: "Transfer", value: "transfer" },
+          { label: "Lend Money", value: "loan_given" },
+          { label: "Borrow Money", value: "loan_received" },
+          { label: "Repayment Recv", value: "repayment_received" },
+          { label: "Repay Debt", value: "repayment_made" },
+        ].map((t) => (
+          <button
+            key={t.value}
+            type="button"
+            onClick={() => setType(t.value)}
+            className={`flex-1 min-w-[100px] py-2 px-3 rounded-lg text-xs font-bold transition ${
+              type === t.value
+                ? "bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20"
+                : "text-slate-400 hover:text-white"
+            }`}
+          >
+            {t.label}
+          </button>
         ))}
-      </SelectField>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <FormField
-          label="Amount"
-          name="amount"
-          inputMode="decimal"
-          autoComplete="off"
-          placeholder="0.00"
-          required
-          error={fieldError("amount")}
-        />
-
-        <SelectField
-          label="Currency"
-          name="currency"
-          value={currency}
-          onChange={(event) => setCurrency(event.target.value)}
-          error={fieldError("currency")}
-        >
-          {SUPPORTED_CURRENCIES.map((code) => (
-            <option key={code} value={code}>
-              {code}
-            </option>
-          ))}
-        </SelectField>
       </div>
 
-      <FormField
-        label="Date and time (UTC)"
-        name="occurredAt"
-        type="datetime-local"
-        defaultValue={defaultOccurredAt}
-        required
-        error={fieldError("occurredAt")}
-      />
+      {error && (
+        <div className="mb-6 p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-sm">
+          {error}
+        </div>
+      )}
 
-      <FormField
-        label="Description"
-        name="description"
-        maxLength={200}
-        autoComplete="off"
-        placeholder="Groceries, salary, rent…"
-        required
-        error={fieldError("description")}
-      />
-
-      {needsAccount ? (
-        <SelectField
-          label={type === "transfer" ? "From account" : "Account"}
-          name={type === "transfer" ? "fromAccountId" : "accountId"}
-          required
-          error={fieldError(type === "transfer" ? "fromAccountId" : "accountId")}
-        >
-          <option value="">Choose an account</option>
-          {matchingAccounts.map((account) => (
-            <option key={account.id} value={account.id}>
-              {account.name}
-            </option>
-          ))}
-        </SelectField>
-      ) : null}
-
-      {type === "transfer" ? (
-        <SelectField
-          label="To account"
-          name="toAccountId"
-          required
-          error={fieldError("toAccountId")}
-        >
-          <option value="">Choose an account</option>
-          {matchingAccounts.map((account) => (
-            <option key={account.id} value={account.id}>
-              {account.name}
-            </option>
-          ))}
-        </SelectField>
-      ) : null}
-
-      {matchingAccounts.length === 0 ? (
-        <p className="text-xs text-danger">
-          No active {currency} accounts exist. Create one first.
-        </p>
-      ) : null}
-
-      {needsPerson ? (
-        <SelectField
-          label="Person"
-          name="personId"
-          required
-          value={personId}
-          onChange={(event) => setPersonId(event.target.value)}
-          error={fieldError("personId")}
-        >
-          <option value="">Choose a person</option>
-          {people.map((person) => (
-            <option key={person.id} value={person.id}>
-              {person.name}
-            </option>
-          ))}
-        </SelectField>
-      ) : null}
-
-      {needsLoan ? (
-        <SelectField
-          label="Link to loan (optional)"
-          name="loanTransactionId"
-          hint="Linking prevents repaying more than the outstanding amount."
-          error={fieldError("loanTransactionId")}
-        >
-          <option value="">Not linked</option>
-          {matchingLoans.map((loan) => (
-            <option key={loan.id} value={loan.id}>
-              {loan.label}
-            </option>
-          ))}
-        </SelectField>
-      ) : null}
-
-      {tags.length > 0 ? (
-        <fieldset className="space-y-2">
-          <legend className="text-sm font-medium text-ink">Tags</legend>
-          <div className="flex flex-wrap gap-2">
-            {tags.map((tag) => (
-              <label
-                key={tag.id}
-                className="flex items-center gap-1.5 rounded-md border border-border-subtle px-2 py-1 text-xs"
-              >
-                <input type="checkbox" name="tagIds" value={tag.id} />
-                {tag.name}
-              </label>
-            ))}
+      <form onSubmit={handleSubmit} className="space-y-5" id="new-transaction-form">
+        {/* Amount & Currency */}
+        <div className="grid grid-cols-3 gap-3">
+          <div className="col-span-2">
+            <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+              Amount
+            </label>
+            <input
+              type="text"
+              name="amount"
+              required
+              placeholder="e.g. 250.00"
+              className="w-full px-4 py-2.5 rounded-xl bg-slate-900/80 border border-white/10 text-white font-mono text-base focus:outline-none focus:border-emerald-500"
+            />
           </div>
-        </fieldset>
-      ) : null}
 
-      <TextareaField
-        label="Notes (optional)"
-        name="notes"
-        maxLength={1000}
-        error={fieldError("notes")}
-      />
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+              Currency
+            </label>
+            <select
+              name="currency"
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-xl bg-slate-900/80 border border-white/10 text-white font-semibold text-sm focus:outline-none focus:border-emerald-500"
+            >
+              {availableCurrencies.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
 
-      <SubmitButton pending={pending}>Save transaction</SubmitButton>
-    </form>
+        {/* Description */}
+        <div>
+          <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+            Description
+          </label>
+          <input
+            type="text"
+            name="description"
+            required
+            placeholder="e.g. Grocery shopping, Lunch, Monthly rent"
+            className="w-full px-4 py-2.5 rounded-xl bg-slate-900/80 border border-white/10 text-white text-sm focus:outline-none focus:border-emerald-500"
+          />
+        </div>
+
+        {/* Account Pickers */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {(type === "expense" ||
+            type === "transfer" ||
+            type === "loan_given" ||
+            type === "repayment_made") && (
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                From Account
+              </label>
+              <select
+                name="sourceAccountId"
+                required
+                className="w-full px-3 py-2.5 rounded-xl bg-slate-900/80 border border-white/10 text-white text-sm focus:outline-none focus:border-emerald-500"
+              >
+                <option value="">Select source account...</option>
+                {filteredAccounts.map((acc) => (
+                  <option key={acc.id} value={acc.id}>
+                    {acc.name} ({acc.accountType})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {(type === "income" ||
+            type === "transfer" ||
+            type === "loan_received" ||
+            type === "repayment_received") && (
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                To Account
+              </label>
+              <select
+                name="destinationAccountId"
+                required
+                className="w-full px-3 py-2.5 rounded-xl bg-slate-900/80 border border-white/10 text-white text-sm focus:outline-none focus:border-emerald-500"
+              >
+                <option value="">Select destination account...</option>
+                {filteredAccounts.map((acc) => (
+                  <option key={acc.id} value={acc.id}>
+                    {acc.name} ({acc.accountType})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+
+        {/* Person Picker (for Loans & Repayments) */}
+        {(type === "loan_given" ||
+          type === "loan_received" ||
+          type === "repayment_received" ||
+          type === "repayment_made") && (
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+              Person
+            </label>
+            <select
+              name="personId"
+              required
+              className="w-full px-3 py-2.5 rounded-xl bg-slate-900/80 border border-white/10 text-white text-sm focus:outline-none focus:border-emerald-500"
+            >
+              <option value="">Select contact / person...</option>
+              {people.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} {p.contact ? `(${p.contact})` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Date & Tags */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+              Date & Time
+            </label>
+            <input
+              type="datetime-local"
+              name="occurredAt"
+              defaultValue={new Date().toISOString().slice(0, 16)}
+              className="w-full px-3 py-2 rounded-xl bg-slate-900/80 border border-white/10 text-white text-sm focus:outline-none focus:border-emerald-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+              Tags
+            </label>
+            <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto p-2 bg-slate-900/40 rounded-xl border border-white/5">
+              {tags.length === 0 ? (
+                <span className="text-xs text-slate-500">No tags created yet.</span>
+              ) : (
+                tags.map((t) => (
+                  <label
+                    key={t.id}
+                    className="flex items-center gap-1.5 text-xs text-slate-300 bg-slate-800/80 px-2.5 py-1 rounded-md border border-white/5 cursor-pointer hover:border-emerald-500/50"
+                  >
+                    <input type="checkbox" name="tagIds" value={t.id} className="rounded" />
+                    <span>{t.name}</span>
+                  </label>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Notes */}
+        <div>
+          <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+            Notes (Optional)
+          </label>
+          <textarea
+            name="notes"
+            rows={2}
+            placeholder="Additional context or remarks..."
+            className="w-full px-4 py-2 rounded-xl bg-slate-900/80 border border-white/10 text-white text-sm focus:outline-none focus:border-emerald-500"
+          />
+        </div>
+
+        {/* Submit Button */}
+        <div className="pt-2">
+          <button
+            type="submit"
+            disabled={isLoading}
+            id="btn-submit-transaction"
+            className="w-full py-3.5 px-6 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold transition shadow-xl shadow-emerald-500/25 disabled:opacity-50 text-sm"
+          >
+            {isLoading ? "Recording Ledger Transaction..." : "Save Transaction"}
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }

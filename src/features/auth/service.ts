@@ -1,147 +1,78 @@
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
+import { db } from "../../db";
+import { users, accounts } from "../../db/schema";
+import { hashPassword, verifyPassword } from "../../lib/auth/password";
+import { AppError } from "../../lib/errors/app-error";
+import { createSession, getSessionUser, revokeCurrentSession } from "./session";
+import { signUpSchema, signInSchema, type SignUpInput, type SignInInput } from "./validation";
+import { DEFAULT_CURRENCY } from "../../lib/money/money";
 
-import type { Database } from "@/db";
-import { sessions, users } from "@/db/schema";
-import { hashPassword, verifyPassword } from "@/lib/auth/password";
-import { AppError, isUniqueViolation } from "@/lib/errors/app-error";
+export async function signUp(input: SignUpInput, userAgent?: string) {
+  const parsed = signUpSchema.parse(input);
 
-import type { SignInInput, SignUpInput } from "./validation";
+  const existing = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.username, parsed.username))
+    .limit(1);
 
-export const SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
-
-export type AuthUser = {
-  id: string;
-  username: string;
-};
-
-export type AuthenticatedSession = {
-  user: AuthUser;
-  sessionId: string;
-  lastUsedAt: Date;
-};
-
-export async function registerUser(
-  db: Database,
-  input: SignUpInput,
-): Promise<AuthUser> {
-  const passwordHash = await hashPassword(input.password);
-
-  try {
-    const [user] = await db
-      .insert(users)
-      .values({ username: input.username, passwordHash })
-      .returning({ id: users.id, username: users.username });
-
-    if (!user) {
-      throw new AppError("INTERNAL", "Could not create the account");
-    }
-
-    return user;
-  } catch (error) {
-    if (isUniqueViolation(error)) {
-      throw new AppError("USERNAME_TAKEN", "That username is already taken", {
-        fieldErrors: { username: ["That username is already taken"] },
-      });
-    }
-
-    throw error;
+  if (existing.length > 0) {
+    throw AppError.conflict("Username is already taken");
   }
+
+  const passwordHash = await hashPassword(parsed.password);
+
+  const [newUser] = await db
+    .insert(users)
+    .values({
+      username: parsed.username,
+      passwordHash,
+    })
+    .returning();
+
+  // Seed default primary account for fresh user
+  await db.insert(accounts).values({
+    userId: newUser.id,
+    name: "Cash Wallet",
+    accountType: "cash",
+    currency: DEFAULT_CURRENCY,
+    description: "Primary physical cash wallet",
+  });
+
+  const sessionToken = await createSession(newUser.id, userAgent);
+  return { user: newUser, sessionToken };
 }
 
-/** Returns null for both unknown users and wrong passwords. */
-export async function authenticateUser(
-  db: Database,
-  input: SignInInput,
-): Promise<AuthUser | null> {
+export async function signIn(input: SignInInput, userAgent?: string) {
+  const parsed = signInSchema.parse(input);
+
   const [user] = await db
-    .select({
-      id: users.id,
-      username: users.username,
-      passwordHash: users.passwordHash,
-    })
+    .select()
     .from(users)
-    .where(eq(users.username, input.username))
+    .where(eq(users.username, parsed.username))
     .limit(1);
 
   if (!user) {
-    return null;
+    throw AppError.unauthorized("Invalid username or password");
   }
 
-  const passwordMatches = await verifyPassword(user.passwordHash, input.password);
-
-  return passwordMatches ? { id: user.id, username: user.username } : null;
-}
-
-export async function createSessionRecord(
-  db: Database,
-  input: {
-    userId: string;
-    tokenHash: string;
-    expiresAt: Date;
-    userAgent?: string | null;
-  },
-): Promise<void> {
-  await db.insert(sessions).values({
-    userId: input.userId,
-    tokenHash: input.tokenHash,
-    expiresAt: input.expiresAt,
-    userAgent: input.userAgent ?? null,
-  });
-}
-
-/**
- * Resolves an unexpired, unrevoked session together with its owner. Expired
- * and revoked sessions are excluded in the query itself.
- */
-export async function findActiveSession(
-  db: Database,
-  tokenHash: string,
-): Promise<AuthenticatedSession | null> {
-  const [row] = await db
-    .select({
-      sessionId: sessions.id,
-      lastUsedAt: sessions.lastUsedAt,
-      userId: users.id,
-      username: users.username,
-    })
-    .from(sessions)
-    .innerJoin(users, eq(users.id, sessions.userId))
-    .where(
-      and(
-        eq(sessions.tokenHash, tokenHash),
-        isNull(sessions.revokedAt),
-        gt(sessions.expiresAt, new Date()),
-      ),
-    )
-    .limit(1);
-
-  if (!row) {
-    return null;
+  const isValid = await verifyPassword(parsed.password, user.passwordHash);
+  if (!isValid) {
+    throw AppError.unauthorized("Invalid username or password");
   }
 
-  return {
-    sessionId: row.sessionId,
-    lastUsedAt: row.lastUsedAt,
-    user: { id: row.userId, username: row.username },
-  };
+  const sessionToken = await createSession(user.id, userAgent);
+  return { user, sessionToken };
 }
 
-export async function touchSession(
-  db: Database,
-  sessionId: string,
-): Promise<void> {
-  await db
-    .update(sessions)
-    .set({ lastUsedAt: new Date() })
-    .where(eq(sessions.id, sessionId));
+export async function signOut() {
+  await revokeCurrentSession();
 }
 
-export async function revokeSession(
-  db: Database,
-  tokenHash: string,
-): Promise<void> {
-  await db
-    .update(sessions)
-    .set({ revokedAt: new Date() })
-    .where(and(eq(sessions.tokenHash, tokenHash), isNull(sessions.revokedAt)));
+export async function requireUser() {
+  const user = await getSessionUser();
+  if (!user) {
+    throw AppError.unauthorized("You must be signed in to perform this action");
+  }
+  return user;
 }

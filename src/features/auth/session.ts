@@ -1,92 +1,85 @@
-import { cookies, headers } from "next/headers";
-import { redirect } from "next/navigation";
-import { cache } from "react";
-
-import { getDb } from "@/db";
-import { getServerEnv } from "@/lib/config/env";
-import { generateSessionToken, hashSessionToken } from "@/lib/auth/session-token";
-
-import {
-  createSessionRecord,
-  findActiveSession,
-  SESSION_DURATION_MS,
-  revokeSession,
-  touchSession,
-  type AuthUser,
-} from "./service";
+import { cookies } from "next/headers";
+import { eq, and, gt, isNull } from "drizzle-orm";
+import { db } from "../../db";
+import { sessions, users, type User } from "../../db/schema";
+import { generateSessionToken, hashSessionToken } from "../../lib/auth/session-token";
 
 export const SESSION_COOKIE_NAME = "linked_coin_session";
+const SESSION_MAX_AGE_DAYS = 30;
 
-const TOUCH_INTERVAL_MS = 60 * 60 * 1000;
-
-/** Creates a server-side session and sets the browser cookie. */
-export async function startSession(userId: string): Promise<void> {
+export async function createSession(userId: string, userAgent?: string): Promise<string> {
   const token = generateSessionToken();
   const tokenHash = hashSessionToken(token);
-  const expiresAt = new Date(Date.now() + SESSION_DURATION_MS);
-  const requestHeaders = await headers();
-  const userAgent = requestHeaders.get("user-agent");
+  const expiresAt = new Date(Date.now() + SESSION_MAX_AGE_DAYS * 24 * 60 * 60 * 1000);
 
-  await createSessionRecord(getDb(), {
+  await db.insert(sessions).values({
     userId,
     tokenHash,
     expiresAt,
-    userAgent,
+    userAgent: userAgent || null,
   });
 
   const cookieStore = await cookies();
-
   cookieStore.set(SESSION_COOKIE_NAME, token, {
     httpOnly: true,
-    secure: getServerEnv().NODE_ENV === "production",
+    secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
     expires: expiresAt,
   });
+
+  return token;
 }
 
-async function loadCurrentUser(): Promise<AuthUser | null> {
-  const cookieStore = await cookies();
-  const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+export async function validateSessionToken(token: string): Promise<User | null> {
+  const tokenHash = hashSessionToken(token);
+  const now = new Date();
 
-  if (!token) {
+  const [record] = await db
+    .select({
+      user: users,
+      session: sessions,
+    })
+    .from(sessions)
+    .innerJoin(users, eq(sessions.userId, users.id))
+    .where(
+      and(
+        eq(sessions.tokenHash, tokenHash),
+        gt(sessions.expiresAt, now),
+        isNull(sessions.revokedAt),
+      ),
+    )
+    .limit(1);
+
+  if (!record) {
     return null;
   }
 
-  const db = getDb();
-  const session = await findActiveSession(db, hashSessionToken(token));
+  // Update lastUsedAt asynchronously
+  db.update(sessions)
+    .set({ lastUsedAt: now })
+    .where(eq(sessions.id, record.session.id))
+    .catch(() => {});
 
-  if (!session) {
-    return null;
-  }
-
-  if (Date.now() - session.lastUsedAt.getTime() > TOUCH_INTERVAL_MS) {
-    await touchSession(db, session.sessionId);
-  }
-
-  return session.user;
+  return record.user;
 }
 
-/** Deduplicated per request by React.cache. */
-export const getCurrentUser = cache(loadCurrentUser);
-
-export async function requireUser(): Promise<AuthUser> {
-  const user = await getCurrentUser();
-
-  if (!user) {
-    redirect("/sign-in");
-  }
-
-  return user;
-}
-
-export async function endSession(): Promise<void> {
+export async function getSessionUser(): Promise<User | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+  if (!token) return null;
+  return validateSessionToken(token);
+}
 
+export async function revokeCurrentSession(): Promise<void> {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
   if (token) {
-    await revokeSession(getDb(), hashSessionToken(token));
+    const tokenHash = hashSessionToken(token);
+    await db
+      .update(sessions)
+      .set({ revokedAt: new Date() })
+      .where(eq(sessions.tokenHash, tokenHash));
   }
-
   cookieStore.delete(SESSION_COOKIE_NAME);
 }

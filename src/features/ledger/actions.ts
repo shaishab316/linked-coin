@@ -1,170 +1,65 @@
 "use server";
 
-import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
-import { z } from "zod";
+import { requireUser } from "../auth/service";
+import { createTransaction, reverseTransaction } from "./service";
+import { createTransactionSchema, reverseTransactionSchema } from "./validation";
 
-import { getDb } from "@/db";
-import { ledgerTransactions } from "@/db/schema";
-import { requireUser } from "@/features/auth/session";
-import { AppError, type FieldErrors, type FormState } from "@/lib/errors/app-error";
-
-import {
-  postLedgerCommand,
-  reverseLedgerTransaction,
-} from "./service";
-import { ledgerCommandSchema, reversalSchema } from "./validation";
-
-function readTransactionForm(formData: FormData): Record<string, unknown> {
-  const optional = (key: string) => {
-    const value = formData.get(key);
-    return typeof value === "string" && value.length > 0 ? value : undefined;
-  };
-
-  return {
-    type: formData.get("type"),
-    description: formData.get("description") ?? "",
-    notes: formData.get("notes") ?? "",
-    currency: formData.get("currency") ?? "",
-    amount: formData.get("amount") ?? "",
-    occurredAt: formData.get("occurredAt") ?? "",
-    accountId: optional("accountId"),
-    fromAccountId: optional("fromAccountId"),
-    toAccountId: optional("toAccountId"),
-    personId: optional("personId"),
-    loanTransactionId: optional("loanTransactionId"),
-    idempotencyKey: formData.get("idempotencyKey"),
-    tagIds: formData
-      .getAll("tagIds")
-      .filter((value): value is string => typeof value === "string" && value.length > 0),
-  };
-}
-
-export async function createTransactionAction(
-  _previousState: FormState,
-  formData: FormData,
-): Promise<FormState> {
+export async function createTransactionAction(formData: FormData) {
   const user = await requireUser();
-  const parsed = ledgerCommandSchema.safeParse(readTransactionForm(formData));
 
-  if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors as FieldErrors };
-  }
-
-  let transactionId: string;
+  const type = formData.get("type") as any;
+  const amount = formData.get("amount") as string;
+  const currency = formData.get("currency") as string;
+  const description = formData.get("description") as string;
+  const notes = (formData.get("notes") as string) || undefined;
+  const occurredAt = (formData.get("occurredAt") as string) || new Date().toISOString();
+  const sourceAccountId = (formData.get("sourceAccountId") as string) || null;
+  const destinationAccountId = (formData.get("destinationAccountId") as string) || null;
+  const personId = (formData.get("personId") as string) || null;
+  const linkedTransactionId = (formData.get("linkedTransactionId") as string) || null;
+  const tagIdsRaw = formData.getAll("tagIds") as string[];
 
   try {
-    const result = await postLedgerCommand(getDb(), user.id, parsed.data);
-    transactionId = result.transactionId;
-  } catch (error) {
-    if (error instanceof AppError) {
-      return {
-        error: error.message,
-        fieldErrors: error.fieldErrors,
-      };
-    }
+    const input = createTransactionSchema.parse({
+      type,
+      amount,
+      currency,
+      description,
+      notes,
+      occurredAt,
+      sourceAccountId,
+      destinationAccountId,
+      personId,
+      linkedTransactionId,
+      tagIds: tagIdsRaw.filter(Boolean),
+    });
 
-    console.error("Ledger command failed", error);
-
-    return { error: "Could not record the transaction. Please try again." };
+    const tx = await createTransaction(user.id, input);
+    revalidatePath("/transactions");
+    revalidatePath("/accounts");
+    revalidatePath("/dashboard");
+    revalidatePath("/people");
+    return { success: true, transactionId: tx.id };
+  } catch (err: any) {
+    return { error: err?.message || "Failed to record transaction" };
   }
-
-  revalidatePath("/transactions");
-  revalidatePath("/dashboard");
-  redirect(`/transactions/${transactionId}`);
 }
 
-const updateMetadataSchema = z.object({
-  transactionId: z.uuid(),
-  description: z
-    .string()
-    .trim()
-    .min(1, "Description is required")
-    .max(200, "Description must be at most 200 characters long"),
-  notes: z
-    .string()
-    .trim()
-    .max(1000)
-    .transform((value) => (value.length > 0 ? value : null)),
-});
-
-/** Only descriptive metadata may change; amounts and entries are immutable. */
-export async function updateTransactionMetadataAction(
-  _previousState: FormState,
-  formData: FormData,
-): Promise<FormState> {
+export async function reverseTransactionAction(transactionId: string, formData: FormData) {
   const user = await requireUser();
-  const parsed = updateMetadataSchema.safeParse({
-    transactionId: formData.get("transactionId") ?? "",
-    description: formData.get("description") ?? "",
-    notes: formData.get("notes") ?? "",
-  });
-
-  if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors as FieldErrors };
-  }
-
-  const rows = await getDb()
-    .update(ledgerTransactions)
-    .set({
-      description: parsed.data.description,
-      notes: parsed.data.notes,
-    })
-    .where(
-      and(
-        eq(ledgerTransactions.id, parsed.data.transactionId),
-        eq(ledgerTransactions.userId, user.id),
-      ),
-    )
-    .returning({ id: ledgerTransactions.id });
-
-  if (rows.length === 0) {
-    return { error: "Transaction not found" };
-  }
-
-  revalidatePath(`/transactions/${parsed.data.transactionId}`);
-  revalidatePath("/transactions");
-
-  return { success: "Transaction details updated" };
-}
-
-export async function reverseTransactionAction(
-  _previousState: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const user = await requireUser();
-  const parsed = reversalSchema.safeParse({
-    transactionId: formData.get("transactionId") ?? "",
-    idempotencyKey: formData.get("idempotencyKey") ?? "",
-    reason: formData.get("reason") ?? "",
-  });
-
-  if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors as FieldErrors };
-  }
-
-  let reversalId: string;
+  const reason = formData.get("reason") as string;
 
   try {
-    const result = await reverseLedgerTransaction(
-      getDb(),
-      user.id,
-      parsed.data,
-    );
-    reversalId = result.transactionId;
-  } catch (error) {
-    if (error instanceof AppError) {
-      return { error: error.message };
-    }
-
-    console.error("Reversal failed", error);
-
-    return { error: "Could not reverse the transaction. Please try again." };
+    const input = reverseTransactionSchema.parse({ reason });
+    await reverseTransaction(user.id, transactionId, input);
+    revalidatePath(`/transactions/${transactionId}`);
+    revalidatePath("/transactions");
+    revalidatePath("/accounts");
+    revalidatePath("/dashboard");
+    revalidatePath("/people");
+    return { success: true };
+  } catch (err: any) {
+    return { error: err?.message || "Failed to reverse transaction" };
   }
-
-  revalidatePath("/transactions");
-  revalidatePath("/dashboard");
-  revalidatePath(`/transactions/${parsed.data.transactionId}`);
-  redirect(`/transactions/${reversalId}`);
 }

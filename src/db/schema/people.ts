@@ -1,14 +1,5 @@
-import { sql } from "drizzle-orm";
-import {
-  check,
-  index,
-  pgTable,
-  text,
-  timestamp,
-  uuid,
-} from "drizzle-orm/pg-core";
-
-import { users } from "./auth";
+import { pgTable, text, timestamp, uuid, index } from "drizzle-orm/pg-core";
+import { users } from "./users";
 
 export const people = pgTable(
   "people",
@@ -20,16 +11,14 @@ export const people = pgTable(
     name: text("name").notNull(),
     contact: text("contact"),
     notes: text("notes"),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
   },
   (table) => [
     index("people_user_id_idx").on(table.userId),
-    check("people_name_not_blank_check", sql`length(btrim(${table.name})) > 0`),
   ],
 );
+
+export type Person = typeof people.$inferSelect;
+export type NewPerson = typeof people.$inferInsert;

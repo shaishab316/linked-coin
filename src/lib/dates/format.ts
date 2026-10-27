@@ -1,29 +1,38 @@
-const dateFormatter = new Intl.DateTimeFormat("en-GB", {
-  day: "2-digit",
-  month: "short",
-  year: "numeric",
-  timeZone: "UTC",
-});
+/**
+ * Standard date formatting and parsing utilities.
+ * All financial occurrence timestamps are stored in UTC.
+ */
 
-const dateTimeFormatter = new Intl.DateTimeFormat("en-GB", {
-  day: "2-digit",
-  month: "short",
-  year: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-  hourCycle: "h23",
-  timeZone: "UTC",
-});
-
-export function formatDate(date: Date): string {
-  return dateFormatter.format(date);
+export function formatDate(dateInput: string | Date): string {
+  const date = typeof dateInput === "string" ? new Date(dateInput) : dateInput;
+  if (isNaN(date.getTime())) return "Invalid date";
+  return date.toISOString().split("T")[0];
 }
 
-export function formatDateTime(date: Date): string {
-  return `${dateTimeFormatter.format(date)} UTC`;
+export function formatDateTime(dateInput: string | Date): string {
+  const date = typeof dateInput === "string" ? new Date(dateInput) : dateInput;
+  if (isNaN(date.getTime())) return "Invalid date";
+  return date.toLocaleString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
-/** Value for `<input type="datetime-local">`, interpreted as UTC. */
-export function toDateTimeLocalValue(date: Date): string {
-  return date.toISOString().slice(0, 16);
+export function toIsoUtc(dateInput: string | Date): string {
+  const date = typeof dateInput === "string" ? new Date(dateInput) : dateInput;
+  if (isNaN(date.getTime())) {
+    throw new Error(`Invalid date: ${dateInput}`);
+  }
+  return date.toISOString();
+}
+
+export function getStartOfMonth(date = new Date()): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+}
+
+export function getEndOfMonth(date = new Date()): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0, 23, 59, 59, 999));
 }

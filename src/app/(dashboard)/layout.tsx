@@ -1,55 +1,50 @@
 import Link from "next/link";
-
-import { signOutAction } from "@/features/auth/actions";
-import { requireUser } from "@/features/auth/session";
-
-const NAV_LINKS = [
-  { href: "/dashboard", label: "Overview" },
-  { href: "/transactions", label: "Transactions" },
-  { href: "/accounts", label: "Accounts" },
-  { href: "/people", label: "People" },
-  { href: "/tags", label: "Tags" },
-] as const;
+import { redirect } from "next/navigation";
+import { getSessionUser } from "../../features/auth/session";
+import { Navigation } from "../../components/navigation";
+import { SyncStatusPill } from "../../components/sync-status-pill";
 
 export default async function DashboardLayout({
   children,
-}: Readonly<{ children: React.ReactNode }>) {
-  const user = await requireUser();
+}: {
+  children: React.ReactNode;
+}) {
+  const user = await getSessionUser();
+  if (!user) {
+    redirect("/sign-in");
+  }
 
   return (
-    <div className="min-h-screen">
-      <header className="border-b border-border-subtle bg-white">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
-          <Link href="/dashboard" className="text-sm font-semibold tracking-tight">
-            Linked Coin
-          </Link>
+    <div className="min-h-screen bg-[#090d16] flex">
+      <Navigation username={user.username} />
 
-          <nav aria-label="Main" className="flex flex-1 flex-wrap gap-4">
-            {NAV_LINKS.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className="text-sm text-ink-muted transition hover:text-ink"
-              >
-                {link.label}
-              </Link>
-            ))}
-          </nav>
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Top Header */}
+        <header className="border-b border-white/5 bg-[#090d16]/80 backdrop-blur-md sticky top-0 z-20 px-6 py-3.5 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <span className="text-xs uppercase tracking-wider font-bold text-slate-500">
+              Workspace
+            </span>
+          </div>
 
-          <span className="text-xs text-ink-muted">{user.username}</span>
-
-          <form action={signOutAction}>
-            <button
-              type="submit"
-              className="rounded-md border border-border-subtle px-2.5 py-1.5 text-xs font-medium text-ink transition hover:bg-surface-muted"
+          <div className="flex items-center gap-4">
+            <SyncStatusPill />
+            <Link
+              href="/transactions/new"
+              id="header-btn-new-transaction"
+              className="px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs transition shadow-md shadow-emerald-500/20 flex items-center gap-1.5"
             >
-              Sign out
-            </button>
-          </form>
-        </div>
-      </header>
+              <span>+</span>
+              <span>New Transaction</span>
+            </Link>
+          </div>
+        </header>
 
-      <main>{children}</main>
+        {/* Main Content Area */}
+        <main className="flex-1 p-6 md:p-8 max-w-7xl mx-auto w-full">
+          {children}
+        </main>
+      </div>
     </div>
   );
 }

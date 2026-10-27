@@ -1,19 +1,15 @@
-import { fileURLToPath } from "node:url";
-
+import "dotenv/config";
 import { defineConfig } from "vitest/config";
+import path from "node:path";
 
 export default defineConfig({
+  test: {
+    globals: true,
+    environment: "node",
+  },
   resolve: {
     alias: {
-      "@": fileURLToPath(new URL("./src", import.meta.url)),
+      "@": path.resolve(__dirname, "./src"),
     },
-  },
-  test: {
-    environment: "node",
-    include: ["src/**/*.test.ts"],
-    // Integration files share one PostgreSQL database, so they must not race.
-    fileParallelism: false,
-    testTimeout: 30_000,
-    hookTimeout: 60_000,
   },
 });

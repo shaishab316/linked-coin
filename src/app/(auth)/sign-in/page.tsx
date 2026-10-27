@@ -1,33 +1,85 @@
+"use client";
+
+import { useState } from "react";
 import Link from "next/link";
-import { redirect } from "next/navigation";
+import { signInAction } from "../../../features/auth/actions";
 
-import { SignInForm } from "@/features/auth/components/sign-in-form";
-import { getCurrentUser } from "@/features/auth/session";
+export default function SignInPage() {
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
-export const dynamic = "force-dynamic";
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError(null);
+    setIsLoading(true);
 
-export default async function SignInPage() {
-  if (await getCurrentUser()) {
-    redirect("/dashboard");
+    const formData = new FormData(e.currentTarget);
+    const res = await signInAction(formData);
+
+    if (res?.error) {
+      setError(res.error);
+      setIsLoading(false);
+    }
   }
 
   return (
-    <div className="space-y-6">
-      <header className="space-y-1">
-        <h1 className="text-xl font-semibold tracking-tight">Sign in</h1>
-        <p className="text-sm text-ink-muted">
-          Access your Linked Coin financial history.
-        </p>
-      </header>
+    <div>
+      <h2 className="text-xl font-bold text-white mb-2">Welcome Back</h2>
+      <p className="text-sm text-slate-400 mb-6">Enter your username and password to access your offline-synced wallet.</p>
 
-      <SignInForm />
+      {error && (
+        <div className="mb-4 p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-sm">
+          {error}
+        </div>
+      )}
 
-      <p className="text-sm text-ink-muted">
-        Need an account?{" "}
-        <Link href="/sign-up" className="font-medium text-accent hover:underline">
-          Create one
+      <form onSubmit={handleSubmit} className="space-y-4" id="sign-in-form">
+        <div>
+          <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5" htmlFor="username">
+            Username
+          </label>
+          <input
+            id="username"
+            name="username"
+            type="text"
+            required
+            autoComplete="username"
+            placeholder="e.g. shaishab"
+            className="w-full px-4 py-2.5 rounded-lg bg-slate-900/80 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition text-sm"
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5" htmlFor="password">
+            Password
+          </label>
+          <input
+            id="password"
+            name="password"
+            type="password"
+            required
+            autoComplete="current-password"
+            placeholder="••••••••"
+            className="w-full px-4 py-2.5 rounded-lg bg-slate-900/80 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition text-sm"
+          />
+        </div>
+
+        <button
+          type="submit"
+          disabled={isLoading}
+          id="btn-sign-in"
+          className="w-full mt-2 py-3 px-4 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold transition shadow-lg shadow-emerald-500/20 disabled:opacity-50 text-sm"
+        >
+          {isLoading ? "Signing In..." : "Sign In"}
+        </button>
+      </form>
+
+      <div className="mt-6 pt-6 border-t border-white/5 text-center text-sm text-slate-400">
+        Don&apos;t have an account?{" "}
+        <Link href="/sign-up" className="text-emerald-400 hover:text-emerald-300 font-medium">
+          Create an account
         </Link>
-      </p>
+      </div>
     </div>
   );
 }

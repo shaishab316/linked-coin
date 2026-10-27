@@ -1,139 +1,70 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
-
-import { getDb } from "@/db";
-import { requireUser } from "@/features/auth/session";
-import { AppError, type FieldErrors, type FormState } from "@/lib/errors/app-error";
-
+import { requireUser } from "../auth/service";
 import {
-  createAccountForUser,
-  setAccountArchivedForUser,
-  updateAccountMetadataForUser,
+  createAccount,
+  updateAccount,
+  archiveAccount,
+  restoreAccount,
 } from "./service";
-import {
-  archiveAccountSchema,
-  createAccountSchema,
-  updateAccountSchema,
-} from "./validation";
+import { createAccountSchema, updateAccountSchema } from "./validation";
 
-export type AccountActionState =
-  | {
-      error?: string;
-      fieldErrors?: FieldErrors;
-    }
-  | undefined;
-
-export async function createAccountAction(
-  _previousState: AccountActionState,
-  formData: FormData,
-): Promise<AccountActionState> {
+export async function createAccountAction(formData: FormData) {
   const user = await requireUser();
 
-  const parsed = createAccountSchema.safeParse({
-    name: formData.get("name") ?? "",
-    accountType: formData.get("accountType") ?? "",
-    currency: formData.get("currency") ?? "",
-    description: formData.get("description") ?? "",
-  });
-
-  if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors as FieldErrors };
-  }
+  const name = formData.get("name") as string;
+  const accountType = formData.get("accountType") as any;
+  const currency = formData.get("currency") as string;
+  const initialBalance = (formData.get("initialBalance") as string) || "0";
+  const description = (formData.get("description") as string) || undefined;
 
   try {
-    await createAccountForUser(getDb(), user.id, parsed.data);
-  } catch (error) {
-    if (error instanceof AppError) {
-      return { error: error.message };
-    }
-
-    console.error("Account creation failed", error);
-
-    return { error: "Could not create the account. Please try again." };
+    const input = createAccountSchema.parse({
+      name,
+      accountType,
+      currency,
+      initialBalance,
+      description,
+    });
+    await createAccount(user.id, input);
+    revalidatePath("/accounts");
+    revalidatePath("/dashboard");
+    return { success: true };
+  } catch (err: any) {
+    return { error: err?.message || "Failed to create account" };
   }
-
-  revalidatePath("/dashboard");
-  redirect("/dashboard");
 }
 
-export async function archiveAccountAction(formData: FormData): Promise<void> {
+export async function updateAccountAction(accountId: string, formData: FormData) {
   const user = await requireUser();
 
-  const parsed = archiveAccountSchema.safeParse({
-    accountId: formData.get("accountId") ?? "",
-  });
+  const name = formData.get("name") as string;
+  const description = (formData.get("description") as string) || undefined;
 
-  if (!parsed.success) {
-    return;
+  try {
+    const input = updateAccountSchema.parse({ name, description });
+    await updateAccount(user.id, accountId, input);
+    revalidatePath(`/accounts/${accountId}`);
+    revalidatePath("/accounts");
+    return { success: true };
+  } catch (err: any) {
+    return { error: err?.message || "Failed to update account" };
   }
-
-  await setAccountArchivedForUser(
-    getDb(),
-    user.id,
-    parsed.data.accountId,
-    true,
-  );
-
-  revalidatePath("/dashboard");
-  revalidatePath("/accounts");
-  revalidatePath(`/accounts/${parsed.data.accountId}`);
 }
 
-export async function restoreAccountAction(formData: FormData): Promise<void> {
+export async function archiveAccountAction(accountId: string): Promise<void> {
   const user = await requireUser();
-
-  const parsed = archiveAccountSchema.safeParse({
-    accountId: formData.get("accountId") ?? "",
-  });
-
-  if (!parsed.success) {
-    return;
-  }
-
-  await setAccountArchivedForUser(
-    getDb(),
-    user.id,
-    parsed.data.accountId,
-    false,
-  );
-
-  revalidatePath("/dashboard");
+  await archiveAccount(user.id, accountId);
+  revalidatePath(`/accounts/${accountId}`);
   revalidatePath("/accounts");
-  revalidatePath(`/accounts/${parsed.data.accountId}`);
+  revalidatePath("/dashboard");
 }
 
-export async function updateAccountAction(
-  _previousState: FormState,
-  formData: FormData,
-): Promise<FormState> {
+export async function restoreAccountAction(accountId: string): Promise<void> {
   const user = await requireUser();
-
-  const parsed = updateAccountSchema.safeParse({
-    accountId: formData.get("accountId") ?? "",
-    name: formData.get("name") ?? "",
-    description: formData.get("description") ?? "",
-  });
-
-  if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors as FieldErrors };
-  }
-
-  const updated = await updateAccountMetadataForUser(
-    getDb(),
-    user.id,
-    parsed.data.accountId,
-    { name: parsed.data.name, description: parsed.data.description },
-  );
-
-  if (!updated) {
-    return { error: "Account not found" };
-  }
-
+  await restoreAccount(user.id, accountId);
+  revalidatePath(`/accounts/${accountId}`);
   revalidatePath("/accounts");
-  revalidatePath(`/accounts/${parsed.data.accountId}`);
   revalidatePath("/dashboard");
-
-  return { success: "Account updated" };
 }

@@ -1,100 +1,89 @@
 # Linked Coin
 
-Offline-first personal finance and financial history management.
-See [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) for the product,
-financial model, synchronization protocol, and roadmap.
+An offline-first personal finance application with double-entry accounting, immutable financial events, interpersonal debt tracking, and flexible query capabilities.
 
-Implemented so far:
+Built strictly according to [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md).
 
-- Foundation: Next.js + strict TypeScript, Tailwind, Drizzle/PostgreSQL,
-  Zod-validated configuration and inputs, Argon2id authentication with
-  server-side sessions.
-- Double-entry ledger with income, expense, transfer, loan, repayment, opening
-  balance, and reversal commands; amounts stored in integer minor units.
-- Ownership-scoped accounts, people, and hierarchical tags, with
-  ledger-derived balances.
-- Transaction history, type filtering, pagination, transaction detail,
-  metadata-only editing, and linked reversals.
-- Dashboard with per-currency position, cash flow, and recent activity.
+---
 
-See [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) for the
-precise implemented/partial/missing breakdown and known limitations.
+## Features
 
-## Requirements
+- **Double-Entry Accounting:** Exact integer minor units (`bigint`), zero floating-point imprecision, deferred database triggers validating balanced entry legs (`sum(debit) == sum(credit)`).
+- **Accounts & Balances:** Cash, Bank, Savings, Digital Wallet, Credit, and Custom accounts with live balance computations.
+- **People & Debt Tracker:** Record loans given, loans received, and repayments without polluting income/expense reports.
+- **Hierarchical Tags:** Categorize transactions with nested parent-child tag trees.
+- **Unified Query Builder:** Token-based search bar (`tag:`, `account:`, `type:`, `amount:`, `date:`, `is:reversed`), editable filter chips, and saved queries.
+- **Offline-First (IndexedDB + Dexie):** Complete client-side database, outbox queue for offline mutations, and push/pull sync engine.
+- **Data Ownership:** Full JSON backup and restore, plus CSV transaction exports with formula-injection sanitization.
+- **Modern UI:** Responsive, clean dark-mode design with glassmorphic cards and micro-animations.
+
+---
+
+## Tech Stack
+
+- **Framework:** Next.js 16 (React 19, Server Actions, Route Handlers)
+- **Database:** PostgreSQL (with PL/pgSQL constraint triggers)
+- **ORM:** Drizzle ORM
+- **Offline Storage:** IndexedDB with Dexie.js
+- **Auth:** Argon2id password hashing + SHA-256 session token cookies
+- **Testing:** Vitest
+
+---
+
+## Getting Started
+
+### 1. Prerequisites
 
 - Node.js 20+
-- pnpm 10+
-- PostgreSQL 17 (a Docker command is provided below)
+- pnpm 9+
+- Docker or a local PostgreSQL instance (port 55432)
 
-## Local setup
+### 2. Environment Setup
+
+Copy `.env.example` to `.env` and verify database credentials:
 
 ```bash
-pnpm install
+cp .env.example .env
+```
 
-# Start a local PostgreSQL instance on port 55432
-docker run -d --name linked-coin-db \
-  -e POSTGRES_USER=linked_coin \
-  -e POSTGRES_PASSWORD=linked_coin_dev \
-  -e POSTGRES_DB=linked_coin \
-  -p 55432:5432 postgres:17-alpine
+Default local database connection:
+```env
+DATABASE_URL=postgresql://linked_coin:linked_coin_dev@localhost:55432/linked_coin
+SESSION_SECRET=a_very_secret_key_at_least_32_characters_long_for_security
+```
 
-# Create the integration-test database
-docker exec linked-coin-db \
-  psql -U linked_coin -d linked_coin -c "CREATE DATABASE linked_coin_test;"
+### 3. Database Migration
 
-cp .env.example .env   # then set a real SESSION_SECRET
+Run the migration script to apply schemas and triggers:
+
+```bash
 pnpm db:migrate
+```
+
+### 4. Running the Development Server
+
+```bash
 pnpm dev
 ```
 
-Open http://localhost:3000, create an account, add a financial account, then
-record income or an opening balance so the ledger has a starting position.
+Visit [http://localhost:3000](http://localhost:3000) to access Linked Coin.
 
-## Scripts
-
-| Command | Purpose |
-|---|---|
-| `pnpm dev` | Development server |
-| `pnpm build` / `pnpm start` | Production build and server |
-| `pnpm typecheck` | TypeScript in strict mode |
-| `pnpm test` | Unit tests plus PostgreSQL integration tests |
-| `pnpm db:generate` | Generate a Drizzle migration from schema changes |
-| `pnpm db:migrate` | Apply pending migrations |
-
-Integration tests run when `TEST_DATABASE_URL` is set and are skipped
-otherwise; point it at a disposable database because the suite truncates
-tables between tests:
+### 5. Running Tests & Typecheck
 
 ```bash
-TEST_DATABASE_URL=postgresql://linked_coin:linked_coin_dev@localhost:55432/linked_coin_test pnpm test
+# Run Vitest test suite
+pnpm test
+
+# Run TypeScript type check
+pnpm typecheck
+
+# Build for production
+pnpm build
 ```
 
-## Structure
+---
 
-```text
-src/
-├── app/                  # App Router routes ((auth), (dashboard))
-├── components/ui/        # Shared form primitives
-├── db/                   # Drizzle client, schema, migrations
-├── features/
-│   ├── auth/             # Validation, Argon2id hashing, sessions, actions
-│   ├── accounts/         # Account commands, metadata, archive/restore
-│   ├── ledger/           # Commands, queries, validation, transaction UI
-│   ├── people/           # Contacts, receivables/payables, archive/restore
-│   └── tags/             # Hierarchical tags
-└── lib/                  # Env, money, dates, tokens, errors
-```
+## Documentation
 
-## Conventions enforced so far
-
-- Money-moving features must enforce ownership server-side; every query takes
-  the authenticated user id, and database triggers reject cross-owner entries.
-- Money is `bigint` minor units with per-currency precision; no floating point.
-- Every transaction is double-entry balanced and written atomically with its
-  entries, tags, links, and immutable financial event.
-- Posted financial events are immutable; corrections append reversals.
-- Session tokens are stored only as SHA-256 hashes; browser cookies are
-  `HttpOnly`, `SameSite=Lax`, and `Secure` in production.
-- Usernames are stored normalized (trimmed, lowercased) so uniqueness is
-  case-insensitive.
-- Zod validation runs on both the form and the server action.
+- [Developer Guide](docs/DEVELOPER_GUIDE.md): Complete specifications and design architecture.
+- [Implementation Status](docs/IMPLEMENTATION_STATUS.md): Current build state, verification logs, and implemented features.

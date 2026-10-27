@@ -1,199 +1,560 @@
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
-
-import type { Database } from "@/db";
+import { eq, and, sql, desc, inArray, isNull } from "drizzle-orm";
+import { db } from "../../db";
 import {
-  accounts,
-  financialEvents,
-  ledgerEntries,
   ledgerTransactions,
+  ledgerEntries,
+  transactionTags,
+  transactionLinks,
+  financialEvents,
+  accounts,
   people,
   tags,
-  transactionLinks,
-  transactionTags,
-} from "@/db/schema";
-import { AppError, isUniqueViolation } from "@/lib/errors/app-error";
+  type LedgerTransaction,
+  type LedgerEntry,
+  type Tag,
+} from "../../db/schema";
+import { AppError } from "../../lib/errors/app-error";
+import { decimalStringToMinor, validateDoubleEntryBalance } from "../../lib/money/money";
 import {
-  formatMinor,
-  parseAmountToMinor,
-} from "@/lib/money/money";
+  createTransactionSchema,
+  reverseTransactionSchema,
+  type CreateTransactionInput,
+  type ReverseTransactionInput,
+} from "./validation";
 
-import type { LedgerCommandInput, ReversalInput } from "./validation";
+export interface TransactionDetail extends LedgerTransaction {
+  entries: LedgerEntry[];
+  tags: Tag[];
+  linkedTransactions?: Array<{
+    id: string;
+    description: string;
+    amountMinor: bigint;
+    currency: string;
+    linkType: string;
+  }>;
+}
 
-type TransactionContext = Parameters<Parameters<Database["transaction"]>[0]>[0];
+export async function createTransaction(
+  userId: string,
+  input: CreateTransactionInput,
+): Promise<TransactionDetail> {
+  const parsed = createTransactionSchema.parse(input);
+  const amountMinor = decimalStringToMinor(parsed.amount, parsed.currency);
 
-type EntryTarget =
-  | { accountId: string }
-  | { personId: string }
-  | { externalKind: "income" | "expense" | "equity" };
+  if (amountMinor <= 0n) {
+    throw AppError.validation("Transaction amount must be strictly greater than zero");
+  }
 
-type PlannedEntry = EntryTarget & {
-  direction: "debit" | "credit";
-  amountMinor: bigint;
-};
+  // Idempotency check: if transaction with (userId, idempotencyKey) already exists, return it
+  const [existing] = await db
+    .select()
+    .from(ledgerTransactions)
+    .where(
+      and(
+        eq(ledgerTransactions.userId, userId),
+        eq(ledgerTransactions.idempotencyKey, parsed.idempotencyKey),
+      ),
+    )
+    .limit(1);
 
-export type LedgerResult = {
-  transactionId: string;
-  idempotent: boolean;
-};
+  if (existing) {
+    return await getTransactionById(userId, existing.id);
+  }
 
-/**
- * Builds the balanced entry plan for a command. Assets increase on debit and
- * decrease on credit; income and expense effects use nominal ledger targets,
- * so every command stays double-entry balanced.
- */
-function planEntries(
-  command: LedgerCommandInput,
-  amountMinor: bigint,
-): PlannedEntry[] {
-  const debit = (target: EntryTarget): PlannedEntry => ({
-    ...target,
-    direction: "debit",
-    amountMinor,
-  });
-  const credit = (target: EntryTarget): PlannedEntry => ({
-    ...target,
-    direction: "credit",
-    amountMinor,
-  });
+  // Validate ownership of accounts
+  if (parsed.sourceAccountId) {
+    const [acc] = await db
+      .select({ id: accounts.id, currency: accounts.currency })
+      .from(accounts)
+      .where(and(eq(accounts.id, parsed.sourceAccountId), eq(accounts.userId, userId)))
+      .limit(1);
+    if (!acc) throw AppError.notFound("Source account not found");
+    if (acc.currency !== parsed.currency) {
+      throw AppError.validation(
+        `Source account currency (${acc.currency}) does not match transaction currency (${parsed.currency})`,
+      );
+    }
+  }
 
-  switch (command.type) {
-    case "income":
-      return [
-        debit({ accountId: command.accountId }),
-        credit({ externalKind: "income" }),
-      ];
+  if (parsed.destinationAccountId) {
+    const [acc] = await db
+      .select({ id: accounts.id, currency: accounts.currency })
+      .from(accounts)
+      .where(and(eq(accounts.id, parsed.destinationAccountId), eq(accounts.userId, userId)))
+      .limit(1);
+    if (!acc) throw AppError.notFound("Destination account not found");
+    if (acc.currency !== parsed.currency) {
+      throw AppError.validation(
+        `Destination account currency (${acc.currency}) does not match transaction currency (${parsed.currency})`,
+      );
+    }
+  }
+
+  // Validate person ownership
+  if (parsed.personId) {
+    const [p] = await db
+      .select({ id: people.id })
+      .from(people)
+      .where(and(eq(people.id, parsed.personId), eq(people.userId, userId)))
+      .limit(1);
+    if (!p) throw AppError.notFound("Person not found");
+  }
+
+  // Validate linked loan debt if repaying a specific loan
+  if (parsed.linkedTransactionId) {
+    const [linkedTx] = await db
+      .select()
+      .from(ledgerTransactions)
+      .where(
+        and(
+          eq(ledgerTransactions.id, parsed.linkedTransactionId),
+          eq(ledgerTransactions.userId, userId),
+        ),
+      )
+      .limit(1);
+
+    if (!linkedTx) throw AppError.notFound("Linked transaction not found");
+
+    if (parsed.type === "repayment_received" || parsed.type === "repayment_made") {
+      const outstanding = await getOutstandingLoanBalance(userId, parsed.linkedTransactionId);
+      if (amountMinor > outstanding) {
+        throw AppError.validation(
+          `Repayment amount (${amountMinor}) exceeds outstanding balance (${outstanding}) of the linked loan`,
+        );
+      }
+    }
+  }
+
+  // Construct balanced double-entry legs
+  const entryDrafts: Array<{
+    accountId?: string | null;
+    personId?: string | null;
+    externalKind?: "income" | "expense" | "equity" | null;
+    direction: "debit" | "credit";
+    amountMinor: bigint;
+    currency: string;
+  }> = [];
+
+  switch (parsed.type) {
     case "expense":
-      return [
-        debit({ externalKind: "expense" }),
-        credit({ accountId: command.accountId }),
-      ];
+      entryDrafts.push(
+        {
+          accountId: parsed.sourceAccountId!,
+          direction: "credit",
+          amountMinor,
+          currency: parsed.currency,
+        },
+        {
+          externalKind: "expense",
+          direction: "debit",
+          amountMinor,
+          currency: parsed.currency,
+        },
+      );
+      break;
+
+    case "income":
+      entryDrafts.push(
+        {
+          accountId: parsed.destinationAccountId!,
+          direction: "debit",
+          amountMinor,
+          currency: parsed.currency,
+        },
+        {
+          externalKind: "income",
+          direction: "credit",
+          amountMinor,
+          currency: parsed.currency,
+        },
+      );
+      break;
+
     case "transfer":
-      return [
-        debit({ accountId: command.toAccountId }),
-        credit({ accountId: command.fromAccountId }),
-      ];
+      entryDrafts.push(
+        {
+          accountId: parsed.sourceAccountId!,
+          direction: "credit",
+          amountMinor,
+          currency: parsed.currency,
+        },
+        {
+          accountId: parsed.destinationAccountId!,
+          direction: "debit",
+          amountMinor,
+          currency: parsed.currency,
+        },
+      );
+      break;
+
     case "loan_given":
-      return [
-        debit({ personId: command.personId }),
-        credit({ accountId: command.accountId }),
-      ];
+      entryDrafts.push(
+        {
+          accountId: parsed.sourceAccountId!,
+          direction: "credit",
+          amountMinor,
+          currency: parsed.currency,
+        },
+        {
+          personId: parsed.personId!,
+          direction: "debit",
+          amountMinor,
+          currency: parsed.currency,
+        },
+      );
+      break;
+
     case "loan_received":
-      return [
-        debit({ accountId: command.accountId }),
-        credit({ personId: command.personId }),
-      ];
+      entryDrafts.push(
+        {
+          accountId: parsed.destinationAccountId!,
+          direction: "debit",
+          amountMinor,
+          currency: parsed.currency,
+        },
+        {
+          personId: parsed.personId!,
+          direction: "credit",
+          amountMinor,
+          currency: parsed.currency,
+        },
+      );
+      break;
+
     case "repayment_received":
-      return [
-        debit({ accountId: command.accountId }),
-        credit({ personId: command.personId }),
-      ];
+      entryDrafts.push(
+        {
+          accountId: parsed.destinationAccountId!,
+          direction: "debit",
+          amountMinor,
+          currency: parsed.currency,
+        },
+        {
+          personId: parsed.personId!,
+          direction: "credit",
+          amountMinor,
+          currency: parsed.currency,
+        },
+      );
+      break;
+
     case "repayment_made":
-      return [
-        debit({ personId: command.personId }),
-        credit({ accountId: command.accountId }),
-      ];
+      entryDrafts.push(
+        {
+          accountId: parsed.sourceAccountId!,
+          direction: "credit",
+          amountMinor,
+          currency: parsed.currency,
+        },
+        {
+          personId: parsed.personId!,
+          direction: "debit",
+          amountMinor,
+          currency: parsed.currency,
+        },
+      );
+      break;
+
     case "adjustment":
-      return [
-        debit({ accountId: command.accountId }),
-        credit({ externalKind: "equity" }),
-      ];
+      entryDrafts.push(
+        {
+          accountId: (parsed.destinationAccountId || parsed.sourceAccountId)!,
+          direction: "debit",
+          amountMinor,
+          currency: parsed.currency,
+        },
+        {
+          externalKind: "equity",
+          direction: "credit",
+          amountMinor,
+          currency: parsed.currency,
+        },
+      );
+      break;
+
+    default:
+      throw AppError.validation(`Unsupported transaction type: ${parsed.type}`);
   }
+
+  // Pre-validate balancing invariant
+  validateDoubleEntryBalance(
+    entryDrafts.map((e) => ({
+      direction: e.direction === "debit" ? "DEBIT" : "CREDIT",
+      amountMinor: e.amountMinor,
+      currency: e.currency,
+    })),
+  );
+
+  const occurredAt = new Date(parsed.occurredAt);
+
+  return await db.transaction(async (tx) => {
+    // 1. Insert transaction
+    const [createdTx] = await tx
+      .insert(ledgerTransactions)
+      .values({
+        userId,
+        type: parsed.type,
+        occurredAt,
+        description: parsed.description,
+        notes: parsed.notes || null,
+        currency: parsed.currency,
+        amountMinor,
+        personId: parsed.personId || null,
+        idempotencyKey: parsed.idempotencyKey,
+      })
+      .returning();
+
+    // 2. Insert entries
+    const entriesToInsert = entryDrafts.map((e) => ({
+      transactionId: createdTx.id,
+      userId,
+      accountId: e.accountId || null,
+      personId: e.personId || null,
+      externalKind: e.externalKind || null,
+      direction: e.direction,
+      amountMinor: e.amountMinor,
+      currency: e.currency,
+    }));
+
+    const insertedEntries = await tx.insert(ledgerEntries).values(entriesToInsert).returning();
+
+    // 3. Associate tags
+    if (parsed.tagIds && parsed.tagIds.length > 0) {
+      // Validate tag ownership
+      const userTags = await tx
+        .select({ id: tags.id })
+        .from(tags)
+        .where(and(eq(tags.userId, userId), inArray(tags.id, parsed.tagIds)));
+
+      if (userTags.length > 0) {
+        await tx.insert(transactionTags).values(
+          userTags.map((t) => ({
+            transactionId: createdTx.id,
+            tagId: t.id,
+          })),
+        );
+      }
+    }
+
+    // 4. Link transactions if applicable
+    if (parsed.linkedTransactionId) {
+      await tx.insert(transactionLinks).values({
+        userId,
+        fromTransactionId: createdTx.id,
+        toTransactionId: parsed.linkedTransactionId,
+        linkType:
+          parsed.type === "repayment_received" || parsed.type === "repayment_made"
+            ? "repayment"
+            : "correction",
+      });
+    }
+
+    // 5. Append immutable financial event
+    await tx.insert(financialEvents).values({
+      userId,
+      transactionId: createdTx.id,
+      eventType: "TRANSACTION_CREATED",
+      payload: {
+        transactionId: createdTx.id,
+        type: parsed.type,
+        amountMinor: amountMinor.toString(),
+        currency: parsed.currency,
+        description: parsed.description,
+        occurredAt: occurredAt.toISOString(),
+      },
+      occurredAt,
+      idempotencyKey: parsed.idempotencyKey,
+    });
+
+    const assignedTags =
+      parsed.tagIds && parsed.tagIds.length > 0
+        ? await tx.select().from(tags).where(inArray(tags.id, parsed.tagIds))
+        : [];
+
+    return {
+      ...createdTx,
+      entries: insertedEntries,
+      tags: assignedTags,
+    };
+  });
 }
 
-async function loadOwnedAccount(
-  tx: TransactionContext,
+export async function reverseTransaction(
   userId: string,
-  accountId: string,
-  currency: string,
-): Promise<void> {
-  const [account] = await tx
-    .select({
-      id: accounts.id,
-      name: accounts.name,
-      currency: accounts.currency,
-      archivedAt: accounts.archivedAt,
-    })
-    .from(accounts)
-    .where(and(eq(accounts.id, accountId), eq(accounts.userId, userId)))
+  transactionId: string,
+  input: ReverseTransactionInput,
+): Promise<TransactionDetail> {
+  const parsed = reverseTransactionSchema.parse(input);
+
+  return await db.transaction(async (tx) => {
+    // 1. Fetch original transaction
+    const [original] = await tx
+      .select()
+      .from(ledgerTransactions)
+      .where(and(eq(ledgerTransactions.id, transactionId), eq(ledgerTransactions.userId, userId)))
+      .limit(1);
+
+    if (!original) {
+      throw AppError.notFound("Transaction not found");
+    }
+
+    if (original.type === "reversal") {
+      throw AppError.validation("A reversal transaction cannot be reversed");
+    }
+
+    if (original.reversedAt) {
+      throw AppError.conflict("This transaction has already been reversed");
+    }
+
+    // 2. Fetch original entries
+    const origEntries = await tx
+      .select()
+      .from(ledgerEntries)
+      .where(and(eq(ledgerEntries.transactionId, transactionId), eq(ledgerEntries.userId, userId)));
+
+    const now = new Date();
+
+    // 3. Create compensating transaction
+    const [reversalTx] = await tx
+      .insert(ledgerTransactions)
+      .values({
+        userId,
+        type: "reversal",
+        occurredAt: now,
+        description: `Reversal of "${original.description}": ${parsed.reason}`,
+        notes: parsed.reason,
+        currency: original.currency,
+        amountMinor: original.amountMinor,
+        personId: original.personId,
+        reversesTransactionId: original.id,
+        idempotencyKey: parsed.idempotencyKey,
+      })
+      .returning();
+
+    // 4. Create inverse entries: debit becomes credit, credit becomes debit
+    const inverseEntries = origEntries.map((e) => ({
+      transactionId: reversalTx.id,
+      userId,
+      accountId: e.accountId,
+      personId: e.personId,
+      externalKind: e.externalKind as any,
+      direction: e.direction === "debit" ? ("credit" as const) : ("debit" as const),
+      amountMinor: e.amountMinor,
+      currency: e.currency,
+    }));
+
+    const insertedEntries = await tx.insert(ledgerEntries).values(inverseEntries).returning();
+
+    // 5. Mark original transaction reversed
+    await tx
+      .update(ledgerTransactions)
+      .set({
+        reversedByTransactionId: reversalTx.id,
+        reversedAt: now,
+      })
+      .where(eq(ledgerTransactions.id, original.id));
+
+    // 6. Link reversal to original
+    await tx.insert(transactionLinks).values({
+      userId,
+      fromTransactionId: reversalTx.id,
+      toTransactionId: original.id,
+      linkType: "reversal",
+    });
+
+    // 7. Append immutable financial event
+    await tx.insert(financialEvents).values({
+      userId,
+      transactionId: reversalTx.id,
+      eventType: "TRANSACTION_REVERSED",
+      payload: {
+        reversalTransactionId: reversalTx.id,
+        originalTransactionId: original.id,
+        reason: parsed.reason,
+        amountMinor: original.amountMinor.toString(),
+        currency: original.currency,
+      },
+      occurredAt: now,
+      idempotencyKey: parsed.idempotencyKey,
+    });
+
+    return {
+      ...reversalTx,
+      entries: insertedEntries,
+      tags: [],
+    };
+  });
+}
+
+export async function getTransactionById(
+  userId: string,
+  transactionId: string,
+): Promise<TransactionDetail> {
+  const [transaction] = await db
+    .select()
+    .from(ledgerTransactions)
+    .where(and(eq(ledgerTransactions.id, transactionId), eq(ledgerTransactions.userId, userId)))
     .limit(1);
 
-  if (!account) {
-    throw new AppError("NOT_FOUND", "Account not found");
+  if (!transaction) {
+    throw AppError.notFound("Transaction not found");
   }
 
-  if (account.archivedAt) {
-    throw new AppError("CONFLICT", `${account.name} is archived`);
-  }
+  const entries = await db
+    .select()
+    .from(ledgerEntries)
+    .where(and(eq(ledgerEntries.transactionId, transactionId), eq(ledgerEntries.userId, userId)));
 
-  if (account.currency !== currency) {
-    throw new AppError(
-      "CONFLICT",
-      `${account.name} is denominated in ${account.currency}, not ${currency}`,
-    );
-  }
-}
+  const tagRows = await db
+    .select({ tag: tags })
+    .from(transactionTags)
+    .innerJoin(tags, eq(transactionTags.tagId, tags.id))
+    .where(eq(transactionTags.transactionId, transactionId));
 
-async function loadOwnedPerson(
-  tx: TransactionContext,
-  userId: string,
-  personId: string,
-  currency: string,
-): Promise<void> {
-  const [person] = await tx
+  const links = await db
     .select({
-      id: people.id,
-      name: people.name,
-      archivedAt: people.archivedAt,
-    })
-    .from(people)
-    .where(and(eq(people.id, personId), eq(people.userId, userId)))
-    .limit(1);
-
-  if (!person) {
-    throw new AppError("NOT_FOUND", "Person not found");
-  }
-
-  if (person.archivedAt) {
-    throw new AppError("CONFLICT", `${person.name} is archived`);
-  }
-
-  // Person balances are per currency; loan commands carry their own currency.
-  void currency;
-}
-
-async function assertOwnedTags(
-  tx: TransactionContext,
-  userId: string,
-  tagIds: string[],
-): Promise<void> {
-  if (tagIds.length === 0) {
-    return;
-  }
-
-  const rows = await tx
-    .select({ id: tags.id })
-    .from(tags)
-    .where(and(eq(tags.userId, userId), inArray(tags.id, tagIds)));
-
-  if (rows.length !== new Set(tagIds).size) {
-    throw new AppError("NOT_FOUND", "One or more tags were not found");
-  }
-}
-
-async function outstandingLoanAmount(
-  tx: TransactionContext,
-  loanTransactionId: string,
-  loanAmountMinor: bigint,
-): Promise<bigint> {
-  const [row] = await tx
-    .select({
-      repaid: sql<string>`coalesce(sum(${ledgerTransactions.amountMinor}), 0)`,
+      id: ledgerTransactions.id,
+      description: ledgerTransactions.description,
+      amountMinor: ledgerTransactions.amountMinor,
+      currency: ledgerTransactions.currency,
+      linkType: transactionLinks.linkType,
     })
     .from(transactionLinks)
-    .innerJoin(
-      ledgerTransactions,
-      eq(ledgerTransactions.id, transactionLinks.fromTransactionId),
-    )
+    .innerJoin(ledgerTransactions, eq(transactionLinks.toTransactionId, ledgerTransactions.id))
+    .where(
+      and(
+        eq(transactionLinks.userId, userId),
+        eq(transactionLinks.fromTransactionId, transactionId),
+      ),
+    );
+
+  return {
+    ...transaction,
+    entries,
+    tags: tagRows.map((r) => r.tag),
+    linkedTransactions: links,
+  };
+}
+
+export async function getOutstandingLoanBalance(
+  userId: string,
+  loanTransactionId: string,
+): Promise<bigint> {
+  const [loan] = await db
+    .select()
+    .from(ledgerTransactions)
+    .where(and(eq(ledgerTransactions.id, loanTransactionId), eq(ledgerTransactions.userId, userId)))
+    .limit(1);
+
+  if (!loan) return 0n;
+
+  // Sum linked repayments that are not reversed
+  const [repayments] = await db
+    .select({
+      total: sql<string>`coalesce(sum(${ledgerTransactions.amountMinor}), 0)`,
+    })
+    .from(transactionLinks)
+    .innerJoin(ledgerTransactions, eq(transactionLinks.fromTransactionId, ledgerTransactions.id))
     .where(
       and(
         eq(transactionLinks.toTransactionId, loanTransactionId),
@@ -202,362 +563,7 @@ async function outstandingLoanAmount(
       ),
     );
 
-  return loanAmountMinor - BigInt(row?.repaid ?? "0");
-}
-
-async function linkRepaymentToLoan(
-  tx: TransactionContext,
-  userId: string,
-  command: Extract<
-    LedgerCommandInput,
-    { type: "repayment_received" | "repayment_made" }
-  >,
-  repaymentTransactionId: string,
-  amountMinor: bigint,
-): Promise<void> {
-  if (!command.loanTransactionId) {
-    return;
-  }
-
-  const [loan] = await tx
-    .select({
-      id: ledgerTransactions.id,
-      type: ledgerTransactions.type,
-      currency: ledgerTransactions.currency,
-      amountMinor: ledgerTransactions.amountMinor,
-      personId: ledgerTransactions.personId,
-      reversedAt: ledgerTransactions.reversedAt,
-    })
-    .from(ledgerTransactions)
-    .where(
-      and(
-        eq(ledgerTransactions.id, command.loanTransactionId),
-        eq(ledgerTransactions.userId, userId),
-      ),
-    )
-    .limit(1);
-
-  if (!loan) {
-    throw new AppError("NOT_FOUND", "Original loan not found");
-  }
-
-  const expectedLoanType =
-    command.type === "repayment_received" ? "loan_given" : "loan_received";
-
-  if (loan.type !== expectedLoanType) {
-    throw new AppError(
-      "CONFLICT",
-      "This repayment does not match the selected loan",
-    );
-  }
-
-  if (loan.personId !== command.personId) {
-    throw new AppError("CONFLICT", "The repayment must be for the same person");
-  }
-
-  if (loan.reversedAt) {
-    throw new AppError("CONFLICT", "The original loan was reversed");
-  }
-
-  if (loan.currency !== command.currency) {
-    throw new AppError(
-      "CONFLICT",
-      `The loan is denominated in ${loan.currency}, not ${command.currency}`,
-    );
-  }
-
-  const outstanding = await outstandingLoanAmount(tx, loan.id, loan.amountMinor);
-
-  if (amountMinor > outstanding) {
-    throw new AppError(
-      "CONFLICT",
-      `Only ${formatMinor(outstanding, loan.currency)} ${loan.currency} remains outstanding on this loan`,
-    );
-  }
-
-  await tx.insert(transactionLinks).values({
-    userId,
-    fromTransactionId: repaymentTransactionId,
-    toTransactionId: loan.id,
-    linkType: "repayment",
-  });
-}
-
-async function findByIdempotencyKey(
-  db: Database,
-  userId: string,
-  idempotencyKey: string,
-): Promise<string | null> {
-  const [row] = await db
-    .select({ id: ledgerTransactions.id })
-    .from(ledgerTransactions)
-    .where(
-      and(
-        eq(ledgerTransactions.userId, userId),
-        eq(ledgerTransactions.idempotencyKey, idempotencyKey),
-      ),
-    )
-    .limit(1);
-
-  return row?.id ?? null;
-}
-
-/**
- * Records a financial command atomically: ownership checks, balanced entries,
- * tags, loan links, and the immutable event are all committed together.
- */
-export async function postLedgerCommand(
-  db: Database,
-  userId: string,
-  command: LedgerCommandInput,
-): Promise<LedgerResult> {
-  const amountMinor = parseAmountToMinor(command.amount, command.currency);
-
-  if (amountMinor === null || amountMinor <= 0n) {
-    throw new AppError("VALIDATION_ERROR", "Enter a valid amount");
-  }
-
-  const entries = planEntries(command, amountMinor);
-
-  try {
-    const transactionId = await db.transaction(async (tx) => {
-      const accountIds = new Set<string>();
-
-      for (const entry of entries) {
-        if ("accountId" in entry) {
-          accountIds.add(entry.accountId);
-        }
-      }
-
-      for (const accountId of accountIds) {
-        await loadOwnedAccount(tx, userId, accountId, command.currency);
-      }
-
-      if ("personId" in command) {
-        await loadOwnedPerson(tx, userId, command.personId, command.currency);
-      }
-
-      await assertOwnedTags(tx, userId, command.tagIds);
-
-      const [transaction] = await tx
-        .insert(ledgerTransactions)
-        .values({
-          userId,
-          type: command.type,
-          occurredAt: command.occurredAt,
-          description: command.description,
-          notes: command.notes,
-          currency: command.currency,
-          amountMinor,
-          personId: "personId" in command ? command.personId : null,
-          idempotencyKey: command.idempotencyKey,
-        })
-        .returning({ id: ledgerTransactions.id });
-
-      if (!transaction) {
-        throw new AppError("INTERNAL", "Could not record the transaction");
-      }
-
-      await tx.insert(ledgerEntries).values(
-        entries.map((entry) => ({
-          transactionId: transaction.id,
-          userId,
-          accountId: "accountId" in entry ? entry.accountId : null,
-          personId: "personId" in entry ? entry.personId : null,
-          externalKind:
-            "externalKind" in entry ? entry.externalKind : null,
-          direction: entry.direction,
-          amountMinor: entry.amountMinor,
-          currency: command.currency,
-        })),
-      );
-
-      const uniqueTagIds = [...new Set(command.tagIds)];
-
-      if (uniqueTagIds.length > 0) {
-        await tx.insert(transactionTags).values(
-          uniqueTagIds.map((tagId) => ({
-            transactionId: transaction.id,
-            tagId,
-          })),
-        );
-      }
-
-      if (
-        command.type === "repayment_received" ||
-        command.type === "repayment_made"
-      ) {
-        await linkRepaymentToLoan(
-          tx,
-          userId,
-          command,
-          transaction.id,
-          amountMinor,
-        );
-      }
-
-      await tx.insert(financialEvents).values({
-        userId,
-        transactionId: transaction.id,
-        eventType: `transaction.${command.type}`,
-        payload: {
-          transactionId: transaction.id,
-          transactionType: command.type,
-          amountMinor: amountMinor.toString(),
-          currency: command.currency,
-          occurredAt: command.occurredAt.toISOString(),
-        },
-        occurredAt: command.occurredAt,
-        idempotencyKey: command.idempotencyKey,
-      });
-
-      return transaction.id;
-    });
-
-    return { transactionId, idempotent: false };
-  } catch (error) {
-    if (isUniqueViolation(error)) {
-      const existingId = await findByIdempotencyKey(
-        db,
-        userId,
-        command.idempotencyKey,
-      );
-
-      if (existingId) {
-        return { transactionId: existingId, idempotent: true };
-      }
-    }
-
-    throw error;
-  }
-}
-
-/**
- * Reverses a posted transaction by appending a compensating transaction with
- * mirrored entries. The original event is never edited or deleted.
- */
-export async function reverseLedgerTransaction(
-  db: Database,
-  userId: string,
-  input: ReversalInput,
-): Promise<LedgerResult> {
-  try {
-    const reversalId = await db.transaction(async (tx) => {
-      const [original] = await tx
-        .select()
-        .from(ledgerTransactions)
-        .where(
-          and(
-            eq(ledgerTransactions.id, input.transactionId),
-            eq(ledgerTransactions.userId, userId),
-          ),
-        )
-        .limit(1);
-
-      if (!original) {
-        throw new AppError("NOT_FOUND", "Transaction not found");
-      }
-
-      if (original.reversedAt || original.reversedByTransactionId) {
-        throw new AppError("CONFLICT", "This transaction was already reversed");
-      }
-
-      if (original.type === "reversal") {
-        throw new AppError("CONFLICT", "A reversal cannot itself be reversed");
-      }
-
-      const originalEntries = await tx
-        .select()
-        .from(ledgerEntries)
-        .where(eq(ledgerEntries.transactionId, original.id));
-
-      if (originalEntries.length === 0) {
-        throw new AppError("INTERNAL", "The transaction has no ledger entries");
-      }
-
-      const [reversal] = await tx
-        .insert(ledgerTransactions)
-        .values({
-          userId,
-          type: "reversal",
-          occurredAt: new Date(),
-          description: `Reversal: ${original.description}`,
-          notes: input.reason,
-          currency: original.currency,
-          amountMinor: original.amountMinor,
-          personId: original.personId,
-          reversesTransactionId: original.id,
-          idempotencyKey: input.idempotencyKey,
-        })
-        .returning({ id: ledgerTransactions.id });
-
-      if (!reversal) {
-        throw new AppError("INTERNAL", "Could not record the reversal");
-      }
-
-      await tx.insert(ledgerEntries).values(
-        originalEntries.map((entry) => ({
-          transactionId: reversal.id,
-          userId,
-          accountId: entry.accountId,
-          personId: entry.personId,
-          externalKind: entry.externalKind,
-          direction: entry.direction === "debit" ? ("credit" as const) : ("debit" as const),
-          amountMinor: entry.amountMinor,
-          currency: entry.currency,
-        })),
-      );
-
-      const reversedAt = new Date();
-
-      await tx
-        .update(ledgerTransactions)
-        .set({
-          reversedAt,
-          reversedByTransactionId: reversal.id,
-        })
-        .where(eq(ledgerTransactions.id, original.id));
-
-      await tx.insert(transactionLinks).values({
-        userId,
-        fromTransactionId: reversal.id,
-        toTransactionId: original.id,
-        linkType: "reversal",
-      });
-
-      await tx.insert(financialEvents).values({
-        userId,
-        transactionId: reversal.id,
-        eventType: "transaction.reversal",
-        payload: {
-          transactionId: reversal.id,
-          transactionType: "reversal",
-          reversesTransactionId: original.id,
-          amountMinor: original.amountMinor.toString(),
-          currency: original.currency,
-          occurredAt: reversedAt.toISOString(),
-        },
-        occurredAt: reversedAt,
-        idempotencyKey: input.idempotencyKey,
-      });
-
-      return reversal.id;
-    });
-
-    return { transactionId: reversalId, idempotent: false };
-  } catch (error) {
-    if (isUniqueViolation(error)) {
-      const existingId = await findByIdempotencyKey(
-        db,
-        userId,
-        input.idempotencyKey,
-      );
-
-      if (existingId) {
-        return { transactionId: existingId, idempotent: true };
-      }
-    }
-
-    throw error;
-  }
+  const repaidMinor = BigInt(repayments?.total || "0");
+  const remaining = loan.amountMinor - repaidMinor;
+  return remaining > 0n ? remaining : 0n;
 }

@@ -1,63 +1,63 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requireUser } from "../auth/service";
+import {
+  createPerson,
+  updatePerson,
+  archivePerson,
+  restorePerson,
+} from "./service";
+import { createPersonSchema, updatePersonSchema } from "./validation";
 
-import { getDb } from "@/db";
-import { requireUser } from "@/features/auth/session";
-import { AppError, type FieldErrors, type FormState } from "@/lib/errors/app-error";
-
-import { createPersonForUser, setPersonArchivedForUser } from "./service";
-import { createPersonSchema, setPersonArchivedSchema } from "./validation";
-
-export async function createPersonAction(
-  _previousState: FormState,
-  formData: FormData,
-): Promise<FormState> {
+export async function createPersonAction(formData: FormData) {
   const user = await requireUser();
-  const parsed = createPersonSchema.safeParse({
-    name: formData.get("name") ?? "",
-    contact: formData.get("contact") ?? "",
-    notes: formData.get("notes") ?? "",
-  });
 
-  if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors as FieldErrors };
-  }
+  const name = formData.get("name") as string;
+  const contact = (formData.get("contact") as string) || undefined;
+  const notes = (formData.get("notes") as string) || undefined;
 
   try {
-    await createPersonForUser(getDb(), user.id, parsed.data);
-  } catch (error) {
-    if (error instanceof AppError) {
-      return { error: error.message };
-    }
-
-    console.error("Person creation failed", error);
-
-    return { error: "Could not add the person. Please try again." };
+    const input = createPersonSchema.parse({ name, contact, notes });
+    await createPerson(user.id, input);
+    revalidatePath("/people");
+    revalidatePath("/dashboard");
+    return { success: true };
+  } catch (err: any) {
+    return { error: err?.message || "Failed to create person" };
   }
-
-  revalidatePath("/people");
-
-  return { success: `${parsed.data.name} added` };
 }
 
-export async function setPersonArchivedAction(formData: FormData): Promise<void> {
+export async function updatePersonAction(personId: string, formData: FormData) {
   const user = await requireUser();
-  const parsed = setPersonArchivedSchema.safeParse({
-    personId: formData.get("personId") ?? "",
-    archived: formData.get("archived") ?? "",
-  });
 
-  if (!parsed.success) {
-    return;
+  const name = formData.get("name") as string;
+  const contact = (formData.get("contact") as string) || undefined;
+  const notes = (formData.get("notes") as string) || undefined;
+
+  try {
+    const input = updatePersonSchema.parse({ name, contact, notes });
+    await updatePerson(user.id, personId, input);
+    revalidatePath(`/people/${personId}`);
+    revalidatePath("/people");
+    return { success: true };
+  } catch (err: any) {
+    return { error: err?.message || "Failed to update person" };
   }
+}
 
-  await setPersonArchivedForUser(
-    getDb(),
-    user.id,
-    parsed.data.personId,
-    parsed.data.archived === "true",
-  );
-
+export async function archivePersonAction(personId: string): Promise<void> {
+  const user = await requireUser();
+  await archivePerson(user.id, personId);
+  revalidatePath(`/people/${personId}`);
   revalidatePath("/people");
+  revalidatePath("/dashboard");
+}
+
+export async function restorePersonAction(personId: string): Promise<void> {
+  const user = await requireUser();
+  await restorePerson(user.id, personId);
+  revalidatePath(`/people/${personId}`);
+  revalidatePath("/people");
+  revalidatePath("/dashboard");
 }

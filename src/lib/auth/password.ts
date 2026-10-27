@@ -1,30 +1,20 @@
 import { hash, verify } from "@node-rs/argon2";
 
-/** `Algorithm.Argon2id` from @node-rs/argon2, which is a const enum. */
-const ARGON2ID = 2;
-
-/**
- * OWASP-recommended Argon2id baseline (19 MiB, 2 iterations, 1 lane).
- * Salts are generated per hash by the library.
- */
-const ARGON2ID_OPTIONS = {
-  algorithm: ARGON2ID,
-  memoryCost: 19_456,
+// Argon2id parameters suitable for modern security and server responsiveness
+const ARGON2_OPTIONS = {
+  memoryCost: 19456, // 19 MiB
   timeCost: 2,
+  outputLen: 32,
   parallelism: 1,
-} as const;
+};
 
 export async function hashPassword(password: string): Promise<string> {
-  return hash(password, ARGON2ID_OPTIONS);
+  return hash(password, ARGON2_OPTIONS);
 }
 
-/** Returns false rather than throwing for malformed or foreign hash values. */
-export async function verifyPassword(
-  passwordHash: string,
-  password: string,
-): Promise<boolean> {
+export async function verifyPassword(password: string, hashString: string): Promise<boolean> {
   try {
-    return await verify(passwordHash, password);
+    return await verify(hashString, password, ARGON2_OPTIONS);
   } catch {
     return false;
   }

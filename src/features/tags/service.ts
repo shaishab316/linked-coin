@@ -1,103 +1,159 @@
-import { and, asc, eq } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
+import { db } from "../../db";
+import { tags, type Tag } from "../../db/schema";
+import { AppError } from "../../lib/errors/app-error";
+import {
+  createTagSchema,
+  updateTagSchema,
+  type CreateTagInput,
+  type UpdateTagInput,
+} from "./validation";
 
-import type { Database } from "@/db";
-import { tags } from "@/db/schema";
-import { AppError, isUniqueViolation } from "@/lib/errors/app-error";
-
-import type { CreateTagInput } from "./validation";
-
-export type TagRecord = {
-  id: string;
-  name: string;
-  description: string | null;
-  parentId: string | null;
-  createdAt: Date;
-  archivedAt: Date | null;
-};
-
-const tagColumns = {
-  id: tags.id,
-  name: tags.name,
-  description: tags.description,
-  parentId: tags.parentId,
-  createdAt: tags.createdAt,
-  archivedAt: tags.archivedAt,
-};
+export interface TagTreeNode extends Tag {
+  children: TagTreeNode[];
+}
 
 export function normalizeTagName(name: string): string {
-  return name.trim().toLowerCase();
+  return name.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-export async function listTagsForUser(
-  db: Database,
-  userId: string,
-): Promise<TagRecord[]> {
-  return db
-    .select(tagColumns)
+export async function createTag(userId: string, input: CreateTagInput): Promise<Tag> {
+  const parsed = createTagSchema.parse(input);
+  const normalizedName = normalizeTagName(parsed.name);
+
+  // Check unique normalized name
+  const existing = await db
+    .select({ id: tags.id })
     .from(tags)
-    .where(eq(tags.userId, userId))
-    .orderBy(asc(tags.archivedAt), asc(tags.name));
-}
+    .where(and(eq(tags.userId, userId), eq(tags.normalizedName, normalizedName)))
+    .limit(1);
 
-export async function createTagForUser(
-  db: Database,
-  userId: string,
-  input: CreateTagInput,
-): Promise<TagRecord> {
-  if (input.parentId) {
+  if (existing.length > 0) {
+    throw AppError.conflict(`A tag named "${parsed.name}" already exists`);
+  }
+
+  // Validate parent if provided
+  if (parsed.parentId) {
     const [parent] = await db
       .select({ id: tags.id })
       .from(tags)
-      .where(and(eq(tags.id, input.parentId), eq(tags.userId, userId)))
+      .where(and(eq(tags.id, parsed.parentId), eq(tags.userId, userId)))
       .limit(1);
 
     if (!parent) {
-      throw new AppError("NOT_FOUND", "Parent tag not found");
+      throw AppError.notFound("Parent tag not found");
     }
   }
 
-  try {
-    const [tag] = await db
-      .insert(tags)
-      .values({
-        userId,
-        name: input.name,
-        normalizedName: normalizeTagName(input.name),
-        description: input.description,
-        parentId: input.parentId,
-      })
-      .returning(tagColumns);
+  const [newTag] = await db
+    .insert(tags)
+    .values({
+      userId,
+      name: parsed.name.trim(),
+      normalizedName,
+      description: parsed.description || null,
+      parentId: parsed.parentId || null,
+    })
+    .returning();
 
-    if (!tag) {
-      throw new AppError("INTERNAL", "Could not create the tag");
-    }
-
-    return tag;
-  } catch (error) {
-    if (isUniqueViolation(error)) {
-      throw new AppError("CONFLICT", "A tag with that name already exists", {
-        fieldErrors: { name: ["A tag with that name already exists"] },
-      });
-    }
-
-    throw error;
-  }
+  return newTag;
 }
 
-export async function setTagArchivedForUser(
-  db: Database,
+export async function listTags(userId: string, includeArchived = false): Promise<Tag[]> {
+  const conditions = [eq(tags.userId, userId)];
+  if (!includeArchived) {
+    conditions.push(isNull(tags.archivedAt));
+  }
+
+  return await db
+    .select()
+    .from(tags)
+    .where(and(...conditions))
+    .orderBy(tags.name);
+}
+
+export function buildTagTree(flatTags: Tag[]): TagTreeNode[] {
+  const tagMap = new Map<string, TagTreeNode>();
+  const roots: TagTreeNode[] = [];
+
+  for (const t of flatTags) {
+    tagMap.set(t.id, { ...t, children: [] });
+  }
+
+  for (const t of flatTags) {
+    const node = tagMap.get(t.id)!;
+    if (t.parentId && tagMap.has(t.parentId)) {
+      tagMap.get(t.parentId)!.children.push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+
+  return roots;
+}
+
+export async function updateTag(
   userId: string,
   tagId: string,
-  archived: boolean,
-): Promise<boolean> {
-  const rows = await db
+  input: UpdateTagInput,
+): Promise<Tag> {
+  const parsed = updateTagSchema.parse(input);
+  const normalizedName = normalizeTagName(parsed.name);
+
+  // Prevent self as parent
+  if (parsed.parentId === tagId) {
+    throw AppError.validation("A tag cannot be its own parent");
+  }
+
+  const [updated] = await db
     .update(tags)
     .set({
-      archivedAt: archived ? new Date() : null,
+      name: parsed.name.trim(),
+      normalizedName,
+      description: parsed.description || null,
+      parentId: parsed.parentId || null,
       updatedAt: new Date(),
     })
     .where(and(eq(tags.id, tagId), eq(tags.userId, userId)))
-    .returning({ id: tags.id });
+    .returning();
 
-  return rows.length > 0;
+  if (!updated) {
+    throw AppError.notFound("Tag not found");
+  }
+
+  return updated;
+}
+
+export async function archiveTag(userId: string, tagId: string): Promise<Tag> {
+  const [updated] = await db
+    .update(tags)
+    .set({
+      archivedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(and(eq(tags.id, tagId), eq(tags.userId, userId)))
+    .returning();
+
+  if (!updated) {
+    throw AppError.notFound("Tag not found");
+  }
+
+  return updated;
+}
+
+export async function restoreTag(userId: string, tagId: string): Promise<Tag> {
+  const [updated] = await db
+    .update(tags)
+    .set({
+      archivedAt: null,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(tags.id, tagId), eq(tags.userId, userId)))
+    .returning();
+
+  if (!updated) {
+    throw AppError.notFound("Tag not found");
+  }
+
+  return updated;
 }

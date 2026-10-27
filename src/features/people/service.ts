@@ -1,90 +1,161 @@
-import { and, asc, eq } from "drizzle-orm";
+import { eq, and, isNull, sql } from "drizzle-orm";
+import { db } from "../../db";
+import { people, ledgerEntries, type Person } from "../../db/schema";
+import { AppError } from "../../lib/errors/app-error";
+import {
+  createPersonSchema,
+  updatePersonSchema,
+  type CreatePersonInput,
+  type UpdatePersonInput,
+} from "./validation";
 
-import type { Database } from "@/db";
-import { people } from "@/db/schema";
-
-import type { CreatePersonInput } from "./validation";
-
-export type PersonRecord = {
-  id: string;
-  name: string;
-  contact: string | null;
-  notes: string | null;
-  createdAt: Date;
-  archivedAt: Date | null;
-};
-
-const personColumns = {
-  id: people.id,
-  name: people.name,
-  contact: people.contact,
-  notes: people.notes,
-  createdAt: people.createdAt,
-  archivedAt: people.archivedAt,
-};
-
-export async function listPeopleForUser(
-  db: Database,
-  userId: string,
-): Promise<PersonRecord[]> {
-  return db
-    .select(personColumns)
-    .from(people)
-    .where(eq(people.userId, userId))
-    .orderBy(asc(people.archivedAt), asc(people.name));
+export interface PersonWithBalance extends Person {
+  outstandingMinor: bigint; // positive: they owe you (receivable); negative: you owe them (payable)
 }
 
-export async function getPersonForUser(
-  db: Database,
-  userId: string,
-  personId: string,
-): Promise<PersonRecord | null> {
-  const [person] = await db
-    .select(personColumns)
-    .from(people)
-    .where(and(eq(people.id, personId), eq(people.userId, userId)))
-    .limit(1);
+export async function createPerson(userId: string, input: CreatePersonInput): Promise<Person> {
+  const parsed = createPersonSchema.parse(input);
 
-  return person ?? null;
-}
-
-export async function createPersonForUser(
-  db: Database,
-  userId: string,
-  input: CreatePersonInput,
-): Promise<PersonRecord> {
   const [person] = await db
     .insert(people)
     .values({
       userId,
-      name: input.name,
-      contact: input.contact,
-      notes: input.notes,
+      name: parsed.name,
+      contact: parsed.contact || null,
+      notes: parsed.notes || null,
     })
-    .returning(personColumns);
-
-  if (!person) {
-    throw new Error("Person insert did not return a row");
-  }
+    .returning();
 
   return person;
 }
 
-/** Archiving keeps every linked loan and repayment intact. */
-export async function setPersonArchivedForUser(
-  db: Database,
+export async function listPeople(
+  userId: string,
+  includeArchived = false,
+): Promise<PersonWithBalance[]> {
+  const conditions = [eq(people.userId, userId)];
+  if (!includeArchived) {
+    conditions.push(isNull(people.archivedAt));
+  }
+
+  const userPeople = await db
+    .select()
+    .from(people)
+    .where(and(...conditions))
+    .orderBy(people.name);
+
+  if (userPeople.length === 0) return [];
+
+  // Group ledger entries by personId to calculate outstanding debt
+  const balances = await db
+    .select({
+      personId: ledgerEntries.personId,
+      debitSum: sql<string>`coalesce(sum(amount_minor) filter (where direction = 'debit'), 0)`,
+      creditSum: sql<string>`coalesce(sum(amount_minor) filter (where direction = 'credit'), 0)`,
+    })
+    .from(ledgerEntries)
+    .where(eq(ledgerEntries.userId, userId))
+    .groupBy(ledgerEntries.personId);
+
+  const balanceMap = new Map<string, bigint>();
+  for (const b of balances) {
+    if (b.personId) {
+      const debits = BigInt(b.debitSum || "0");
+      const credits = BigInt(b.creditSum || "0");
+      // Debits increase receivable (they owe you); credits decrease receivable
+      balanceMap.set(b.personId, debits - credits);
+    }
+  }
+
+  return userPeople.map((p) => ({
+    ...p,
+    outstandingMinor: balanceMap.get(p.id) || 0n,
+  }));
+}
+
+export async function getPersonById(userId: string, personId: string): Promise<PersonWithBalance> {
+  const [person] = await db
+    .select()
+    .from(people)
+    .where(and(eq(people.id, personId), eq(people.userId, userId)))
+    .limit(1);
+
+  if (!person) {
+    throw AppError.notFound("Person not found");
+  }
+
+  const [balanceRow] = await db
+    .select({
+      debitSum: sql<string>`coalesce(sum(amount_minor) filter (where direction = 'debit'), 0)`,
+      creditSum: sql<string>`coalesce(sum(amount_minor) filter (where direction = 'credit'), 0)`,
+    })
+    .from(ledgerEntries)
+    .where(and(eq(ledgerEntries.userId, userId), eq(ledgerEntries.personId, personId)));
+
+  const debits = BigInt(balanceRow?.debitSum || "0");
+  const credits = BigInt(balanceRow?.creditSum || "0");
+
+  return {
+    ...person,
+    outstandingMinor: debits - credits,
+  };
+}
+
+export async function updatePerson(
   userId: string,
   personId: string,
-  archived: boolean,
-): Promise<boolean> {
-  const rows = await db
+  input: UpdatePersonInput,
+): Promise<Person> {
+  const parsed = updatePersonSchema.parse(input);
+
+  const [updated] = await db
     .update(people)
     .set({
-      archivedAt: archived ? new Date() : null,
+      name: parsed.name,
+      contact: parsed.contact || null,
+      notes: parsed.notes || null,
       updatedAt: new Date(),
     })
     .where(and(eq(people.id, personId), eq(people.userId, userId)))
-    .returning({ id: people.id });
+    .returning();
 
-  return rows.length > 0;
+  if (!updated) {
+    throw AppError.notFound("Person not found");
+  }
+
+  return updated;
+}
+
+export async function archivePerson(userId: string, personId: string): Promise<Person> {
+  const [updated] = await db
+    .update(people)
+    .set({
+      archivedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(and(eq(people.id, personId), eq(people.userId, userId)))
+    .returning();
+
+  if (!updated) {
+    throw AppError.notFound("Person not found");
+  }
+
+  return updated;
+}
+
+export async function restorePerson(userId: string, personId: string): Promise<Person> {
+  const [updated] = await db
+    .update(people)
+    .set({
+      archivedAt: null,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(people.id, personId), eq(people.userId, userId)))
+    .returning();
+
+  if (!updated) {
+    throw AppError.notFound("Person not found");
+  }
+
+  return updated;
 }

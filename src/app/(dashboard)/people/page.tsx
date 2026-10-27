@@ -1,115 +1,123 @@
 import Link from "next/link";
-
-import { getDb } from "@/db";
-import { requireUser } from "@/features/auth/session";
-import { getPersonBalances } from "@/features/ledger/queries";
-import { setPersonArchivedAction } from "@/features/people/actions";
-import { CreatePersonForm } from "@/features/people/components/create-person-form";
-import { listPeopleForUser } from "@/features/people/service";
-import { formatMoney } from "@/lib/money/money";
-
-export const dynamic = "force-dynamic";
+import { requireUser } from "../../../features/auth/service";
+import { listPeople } from "../../../features/people/service";
+import { CreatePersonDialog } from "../../../features/people/components/create-person-dialog";
+import { formatMoney, DEFAULT_CURRENCY } from "../../../lib/money/money";
 
 export default async function PeoplePage() {
   const user = await requireUser();
-  const db = getDb();
-  const [people, balances] = await Promise.all([
-    listPeopleForUser(db, user.id),
-    getPersonBalances(db, user.id),
-  ]);
+  const people = await listPeople(user.id, true);
+
+  const activePeople = people.filter((p) => !p.archivedAt);
+  const archivedPeople = people.filter((p) => p.archivedAt);
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 py-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">People</h1>
-        <p className="text-sm text-ink-muted">
-          Track money you lent, money you borrowed, and partial repayments.
-        </p>
+    <div className="space-y-6" id="people-page">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-white tracking-tight">People & Personal Debts</h1>
+          <p className="text-sm text-slate-400">
+            Track money owed to or by people. Accurately separate receivables from regular income.
+          </p>
+        </div>
+
+        <CreatePersonDialog />
       </div>
 
-      <div className="grid gap-8 md:grid-cols-[2fr_1fr]">
-        <section className="space-y-2">
-          <h2 className="text-lg font-semibold">Contacts</h2>
+      {/* People Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {activePeople.length === 0 ? (
+          <div className="col-span-full py-12 text-center text-sm text-slate-500 glass-panel rounded-2xl">
+            No contacts added yet. Add a contact above to track personal debts.
+          </div>
+        ) : (
+          activePeople.map((person) => {
+            const hasDebt = person.outstandingMinor !== 0n;
+            const owesYou = person.outstandingMinor > 0n;
 
-          {people.length === 0 ? (
-            <p className="rounded-lg border border-dashed border-border-subtle bg-white px-4 py-8 text-center text-sm text-ink-muted">
-              No people yet. Add someone to record loans and repayments.
-            </p>
-          ) : (
-            <ul className="space-y-2">
-              {people.map((person) => {
-                const personBalances = balances.filter(
-                  (balance) => balance.personId === person.id,
-                );
+            return (
+              <Link
+                key={person.id}
+                href={`/people/${person.id}`}
+                className="glass-card p-5 rounded-2xl flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span
+                      className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full ${
+                        !hasDebt
+                          ? "bg-slate-800 text-slate-400 border border-white/5"
+                          : owesYou
+                            ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                            : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                      }`}
+                    >
+                      {!hasDebt ? "Settled" : owesYou ? "Receivable" : "Payable"}
+                    </span>
+                    {person.contact && (
+                      <span className="text-xs text-slate-400 truncate max-w-[120px]">
+                        {person.contact}
+                      </span>
+                    )}
+                  </div>
 
-                return (
-                  <li
-                    key={person.id}
-                    className="rounded-lg border border-border-subtle bg-white px-4 py-3"
+                  <h3 className="text-lg font-bold text-white mb-1">{person.name}</h3>
+                  {person.notes && (
+                    <p className="text-xs text-slate-400 line-clamp-2 mb-4">{person.notes}</p>
+                  )}
+                </div>
+
+                <div className="pt-4 border-t border-white/5 flex items-baseline justify-between">
+                  <span className="text-xs text-slate-400">
+                    {!hasDebt ? "Outstanding" : owesYou ? "Owes you" : "You owe"}
+                  </span>
+                  <span
+                    className={`text-lg font-mono font-black ${
+                      !hasDebt
+                        ? "text-slate-400"
+                        : owesYou
+                          ? "text-emerald-400"
+                          : "text-amber-400"
+                    }`}
                   >
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <Link href={`/people/${person.id}`} className="min-w-0">
-                        <p className="truncate font-medium">{person.name}</p>
-                        <p className="text-xs text-ink-muted">
-                          {person.contact ?? "no contact"}
-                          {person.archivedAt ? " · archived" : ""}
-                        </p>
-                      </Link>
-
-                      <div className="flex flex-wrap items-center gap-3">
-                        {personBalances.length === 0 ? (
-                          <span className="text-xs text-ink-muted">
-                            settled
-                          </span>
-                        ) : (
-                          personBalances.map((balance) => (
-                            <span
-                              key={balance.currency}
-                              className={`font-mono text-sm ${
-                                balance.netMinor > 0n
-                                  ? "text-emerald-700"
-                                  : "text-danger"
-                              }`}
-                            >
-                              {balance.netMinor > 0n ? "owes you " : "you owe "}
-                              {formatMoney(
-                                balance.netMinor > 0n
-                                  ? balance.netMinor
-                                  : -balance.netMinor,
-                                balance.currency,
-                              )}
-                            </span>
-                          ))
-                        )}
-
-                        <form action={setPersonArchivedAction}>
-                          <input type="hidden" name="personId" value={person.id} />
-                          <input
-                            type="hidden"
-                            name="archived"
-                            value={person.archivedAt ? "false" : "true"}
-                          />
-                          <button
-                            type="submit"
-                            className="rounded-md border border-border-subtle px-2.5 py-1 text-xs font-medium text-ink-muted transition hover:bg-surface-muted"
-                          >
-                            {person.archivedAt ? "Restore" : "Archive"}
-                          </button>
-                        </form>
-                      </div>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
-
-        <aside className="rounded-lg border border-border-subtle bg-white p-4">
-          <h2 className="mb-4 text-lg font-semibold">New person</h2>
-          <CreatePersonForm />
-        </aside>
+                    {formatMoney(
+                      owesYou ? person.outstandingMinor : -person.outstandingMinor,
+                      DEFAULT_CURRENCY,
+                    )}
+                  </span>
+                </div>
+              </Link>
+            );
+          })
+        )}
       </div>
+
+      {/* Archived Contacts */}
+      {archivedPeople.length > 0 && (
+        <div className="pt-6 border-t border-white/5">
+          <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">
+            Archived Contacts ({archivedPeople.length})
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 opacity-60">
+            {archivedPeople.map((person) => (
+              <Link
+                key={person.id}
+                href={`/people/${person.id}`}
+                className="glass-card p-4 rounded-xl flex justify-between items-center"
+              >
+                <div>
+                  <div className="text-sm font-semibold text-white">{person.name}</div>
+                  <div className="text-[10px] text-slate-400">Archived</div>
+                </div>
+                <div className="text-sm font-mono text-slate-300">
+                  {formatMoney(person.outstandingMinor, DEFAULT_CURRENCY)}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

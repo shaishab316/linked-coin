@@ -1,20 +1,9 @@
-import {
-  index,
-  pgEnum,
-  pgTable,
-  timestamp,
-  uniqueIndex,
-  uuid,
-} from "drizzle-orm/pg-core";
-
-import { users } from "./auth";
+import { pgTable, text, timestamp, uuid, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { users } from "./users";
 import { ledgerTransactions } from "./ledger";
 
-export const transactionLinkTypeEnum = pgEnum("transaction_link_type", [
-  "repayment",
-  "reversal",
-  "correction",
-]);
+export const LINK_TYPES = ["repayment", "reversal", "correction"] as const;
+export type LinkType = (typeof LINK_TYPES)[number];
 
 export const transactionLinks = pgTable(
   "transaction_links",
@@ -29,20 +18,15 @@ export const transactionLinks = pgTable(
     toTransactionId: uuid("to_transaction_id")
       .notNull()
       .references(() => ledgerTransactions.id, { onDelete: "cascade" }),
-    linkType: transactionLinkTypeEnum("link_type").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    linkType: text("link_type").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex("transaction_links_unique").on(
-      table.fromTransactionId,
-      table.toTransactionId,
-      table.linkType,
-    ),
-    index("transaction_links_to_transaction_id_idx").on(
-      table.toTransactionId,
-    ),
+    uniqueIndex("transaction_links_unique").on(table.fromTransactionId, table.toTransactionId, table.linkType),
+    index("transaction_links_to_transaction_id_idx").on(table.toTransactionId),
     index("transaction_links_user_id_idx").on(table.userId),
   ],
 );
+
+export type TransactionLink = typeof transactionLinks.$inferSelect;
+export type NewTransactionLink = typeof transactionLinks.$inferInsert;

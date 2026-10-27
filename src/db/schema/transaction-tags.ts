@@ -1,5 +1,4 @@
-import { index, pgTable, primaryKey, uuid } from "drizzle-orm/pg-core";
-
+import { pgTable, uuid, primaryKey, index } from "drizzle-orm/pg-core";
 import { ledgerTransactions } from "./ledger";
 import { tags } from "./tags";
 
@@ -18,3 +17,6 @@ export const transactionTags = pgTable(
     index("transaction_tags_tag_id_idx").on(table.tagId),
   ],
 );
+
+export type TransactionTag = typeof transactionTags.$inferSelect;
+export type NewTransactionTag = typeof transactionTags.$inferInsert;

@@ -1,128 +1,101 @@
-import { getDb } from "@/db";
-import { requireUser } from "@/features/auth/session";
-import { setTagArchivedAction } from "@/features/tags/actions";
-import { CreateTagForm } from "@/features/tags/components/create-tag-form";
-import { listTagsForUser, type TagRecord } from "@/features/tags/service";
-
-export const dynamic = "force-dynamic";
-
-type TagNode = TagRecord & { children: TagNode[] };
-
-function buildTree(tags: TagRecord[]): TagNode[] {
-  const nodes = new Map<string, TagNode>(
-    tags.map((tag) => [tag.id, { ...tag, children: [] }]),
-  );
-  const roots: TagNode[] = [];
-
-  for (const tag of tags) {
-    const node = nodes.get(tag.id);
-
-    if (!node) {
-      continue;
-    }
-
-    const parent = tag.parentId ? nodes.get(tag.parentId) : undefined;
-
-    if (parent) {
-      parent.children.push(node);
-    } else {
-      roots.push(node);
-    }
-  }
-
-  return roots;
-}
-
-function TagList({
-  nodes,
-  depth = 0,
-}: {
-  nodes: TagNode[];
-  depth?: number;
-}) {
-  return (
-    <ul className={depth === 0 ? "space-y-2" : "mt-2 space-y-2 pl-4"}>
-      {nodes.map((node) => (
-        <li key={node.id}>
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border-subtle bg-white px-3 py-2">
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium">
-                {node.name}
-                {node.archivedAt ? (
-                  <span className="ml-2 text-xs text-ink-muted">archived</span>
-                ) : null}
-              </p>
-              {node.description ? (
-                <p className="truncate text-xs text-ink-muted">
-                  {node.description}
-                </p>
-              ) : null}
-            </div>
-
-            <form action={setTagArchivedAction}>
-              <input type="hidden" name="tagId" value={node.id} />
-              <input
-                type="hidden"
-                name="archived"
-                value={node.archivedAt ? "false" : "true"}
-              />
-              <button
-                type="submit"
-                className="rounded-md border border-border-subtle px-2.5 py-1 text-xs font-medium text-ink-muted transition hover:bg-surface-muted"
-              >
-                {node.archivedAt ? "Restore" : "Archive"}
-              </button>
-            </form>
-          </div>
-
-          {node.children.length > 0 ? (
-            <TagList nodes={node.children} depth={depth + 1} />
-          ) : null}
-        </li>
-      ))}
-    </ul>
-  );
-}
+import { requireUser } from "../../../features/auth/service";
+import { listTags, buildTagTree, type TagTreeNode } from "../../../features/tags/service";
+import { CreateTagDialog } from "../../../features/tags/components/create-tag-dialog";
+import { archiveTagAction, restoreTagAction } from "../../../features/tags/actions";
 
 export default async function TagsPage() {
   const user = await requireUser();
-  const tags = await listTagsForUser(getDb(), user.id);
-  const activeTags = tags.filter((tag) => !tag.archivedAt);
-  const tree = buildTree(tags);
+  const allTags = await listTags(user.id, true);
+
+  const activeTags = allTags.filter((t) => !t.archivedAt);
+  const archivedTags = allTags.filter((t) => t.archivedAt);
+  const tagTree = buildTagTree(activeTags);
+
+  function renderTree(node: TagTreeNode, depth = 0) {
+    return (
+      <div key={node.id} className="space-y-2">
+        <div
+          className="flex items-center justify-between p-3 rounded-xl bg-slate-900/60 hover:bg-slate-800 border border-white/5 transition"
+          style={{ marginLeft: `${depth * 24}px` }}
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-emerald-400 font-bold">{depth > 0 ? "↳" : "🏷️"}</span>
+            <div>
+              <span className="font-semibold text-white text-sm">{node.name}</span>
+              {node.description && (
+                <span className="text-xs text-slate-400 ml-2">&bull; {node.description}</span>
+              )}
+            </div>
+          </div>
+
+          <form action={archiveTagAction.bind(null, node.id)}>
+            <button
+              type="submit"
+              className="text-[11px] text-slate-500 hover:text-rose-400 transition"
+            >
+              Archive
+            </button>
+          </form>
+        </div>
+
+        {node.children.map((child) => renderTree(child, depth + 1))}
+      </div>
+    );
+  }
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 py-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Tags</h1>
-        <p className="text-sm text-ink-muted">
-          Tags double as categories and can be nested, for example Food →
-          Restaurants.
-        </p>
+    <div className="space-y-6 max-w-4xl mx-auto" id="tags-page">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-white tracking-tight">Tags & Categories</h1>
+          <p className="text-sm text-slate-400">
+            Hierarchical categorization (e.g. Food &rarr; Groceries &rarr; Organic).
+          </p>
+        </div>
+
+        <CreateTagDialog existingTags={activeTags} />
       </div>
 
-      <div className="grid gap-8 md:grid-cols-[2fr_1fr]">
-        <section className="space-y-3">
-          <h2 className="text-lg font-semibold">Your tags</h2>
+      {/* Tags Tree Card */}
+      <div className="glass-panel p-6 rounded-2xl">
+        <h2 className="text-base font-bold text-white mb-4">Tag Hierarchy</h2>
 
-          {tree.length === 0 ? (
-            <p className="rounded-lg border border-dashed border-border-subtle bg-white px-4 py-8 text-center text-sm text-ink-muted">
-              No tags yet. Create one to categorize transactions.
-            </p>
-          ) : (
-            <TagList nodes={tree} />
-          )}
-        </section>
-
-        <aside className="rounded-lg border border-border-subtle bg-white p-4">
-          <h2 className="mb-4 text-lg font-semibold">New tag</h2>
-          <CreateTagForm
-            parentOptions={activeTags.map((tag) => ({
-              id: tag.id,
-              name: tag.name,
-            }))}
-          />
-        </aside>
+        {tagTree.length === 0 ? (
+          <div className="py-12 text-center text-sm text-slate-500">
+            No tags created yet. Click &quot;Add Tag&quot; above to organize your spending.
+          </div>
+        ) : (
+          <div className="space-y-3">{tagTree.map((root) => renderTree(root))}</div>
+        )}
       </div>
+
+      {/* Archived Tags */}
+      {archivedTags.length > 0 && (
+        <div className="pt-6 border-t border-white/5">
+          <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">
+            Archived Tags ({archivedTags.length})
+          </h2>
+          <div className="space-y-2 opacity-60">
+            {archivedTags.map((t) => (
+              <div
+                key={t.id}
+                className="glass-card p-3 rounded-xl flex items-center justify-between text-xs"
+              >
+                <span className="text-slate-300 font-medium">{t.name} (Archived)</span>
+                <form action={restoreTagAction.bind(null, t.id)}>
+                  <button
+                    type="submit"
+                    className="text-emerald-400 hover:text-emerald-300 font-semibold"
+                  >
+                    Restore
+                  </button>
+                </form>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

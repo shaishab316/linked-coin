@@ -1,34 +1,32 @@
 import { drizzle } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
-
-import { getServerEnv } from "@/lib/config/env";
-
+import pg from "pg";
 import * as schema from "./schema";
+import { getEnv } from "../lib/config/env";
 
-export type Database = ReturnType<typeof drizzle<typeof schema>>;
+const { Pool } = pg;
 
-let pool: Pool | undefined;
-let database: Database | undefined;
+declare global {
+  // eslint-disable-next-line no-var
+  var __dbPool: pg.Pool | undefined;
+}
 
-/**
- * Lazily created so that importing this module (for example during a build)
- * does not require a live database connection.
- */
-export function getDb(): Database {
-  if (!database) {
-    const { DATABASE_URL } = getServerEnv();
-
-    pool = new Pool({ connectionString: DATABASE_URL, max: 10 });
-    database = drizzle(pool, { schema });
+function getPool(): pg.Pool {
+  if (process.env.NODE_ENV === "production") {
+    return new Pool({
+      connectionString: getEnv().DATABASE_URL,
+      max: 10,
+    });
   }
 
-  return database;
+  if (!global.__dbPool) {
+    global.__dbPool = new Pool({
+      connectionString: getEnv().DATABASE_URL,
+      max: 10,
+    });
+  }
+
+  return global.__dbPool;
 }
 
-export async function closeDb(): Promise<void> {
-  await pool?.end();
-  pool = undefined;
-  database = undefined;
-}
-
-export { schema };
+export const pool = getPool();
+export const db = drizzle(pool, { schema });

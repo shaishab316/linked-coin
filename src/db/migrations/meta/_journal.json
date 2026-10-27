@@ -15,6 +15,13 @@
       "when": 1793084363981,
       "tag": "0001_overjoyed_juggernaut",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793086000000,
+      "tag": "0002_add_sync_and_queries",
+      "breakpoints": true
     }
   ]
 }

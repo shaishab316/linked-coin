@@ -1,24 +1,16 @@
-import { sql } from "drizzle-orm";
-import {
-  check,
-  index,
-  pgEnum,
-  pgTable,
-  text,
-  timestamp,
-  uuid,
-} from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, uuid, index } from "drizzle-orm/pg-core";
+import { users } from "./users";
 
-import { users } from "./auth";
-
-export const accountTypeEnum = pgEnum("account_type", [
+export const ACCOUNT_TYPES = [
   "cash",
   "bank",
   "savings",
   "digital_wallet",
   "credit",
   "custom",
-]);
+] as const;
+
+export type AccountType = (typeof ACCOUNT_TYPES)[number];
 
 export const accounts = pgTable(
   "accounts",
@@ -28,23 +20,18 @@ export const accounts = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    accountType: accountTypeEnum("account_type").notNull(),
+    accountType: text("account_type").notNull(),
     currency: text("currency").notNull(),
     description: text("description"),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
   },
   (table) => [
     index("accounts_user_id_idx").on(table.userId),
     index("accounts_user_id_archived_at_idx").on(table.userId, table.archivedAt),
-    check(
-      "accounts_currency_format_check",
-      sql`${table.currency} ~ '^[A-Z]{3}$'`,
-    ),
   ],
 );
+
+export type Account = typeof accounts.$inferSelect;
+export type NewAccount = typeof accounts.$inferInsert;

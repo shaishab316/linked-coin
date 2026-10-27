@@ -1,64 +1,88 @@
-/**
- * Stable, client-safe error codes. Messages are intentionally generic so
- * database or infrastructure details never reach the browser.
- */
-export type AppErrorCode =
-  | "VALIDATION_ERROR"
-  | "INVALID_CREDENTIALS"
-  | "USERNAME_TAKEN"
-  | "UNAUTHENTICATED"
+export type ErrorCode =
+  | "UNAUTHORIZED"
   | "FORBIDDEN"
   | "NOT_FOUND"
+  | "VALIDATION_ERROR"
   | "CONFLICT"
-  | "INTERNAL";
-
-export type FieldErrors = Record<string, string[]>;
-
-/** Shape returned to `useActionState` forms. */
-export type FormState =
-  | {
-      error?: string;
-      fieldErrors?: FieldErrors;
-      success?: string;
-    }
-  | undefined;
+  | "IDEMPOTENT_REPLAY"
+  | "UNBALANCED_TRANSACTION"
+  | "INVALID_CURRENCY"
+  | "INSUFFICIENT_FUNDS"
+  | "EXCEEDS_OUTSTANDING_DEBT"
+  | "IMMUTABLE_EVENT_MODIFIED"
+  | "INTERNAL_SERVER_ERROR";
 
 export class AppError extends Error {
-  readonly code: AppErrorCode;
-  readonly fieldErrors: FieldErrors | undefined;
-  readonly retryable: boolean;
+  public readonly code: ErrorCode;
+  public readonly statusCode: number;
+  public readonly details?: Record<string, unknown>;
 
   constructor(
-    code: AppErrorCode,
     message: string,
-    options: { fieldErrors?: FieldErrors; retryable?: boolean; cause?: unknown } = {},
+    code: ErrorCode = "INTERNAL_SERVER_ERROR",
+    statusCode = 500,
+    details?: Record<string, unknown>,
   ) {
-    super(message, { cause: options.cause });
+    super(message);
     this.name = "AppError";
     this.code = code;
-    this.fieldErrors = options.fieldErrors;
-    this.retryable = options.retryable ?? false;
+    this.statusCode = statusCode;
+    this.details = details;
+    Object.setPrototypeOf(this, new.target.prototype);
   }
-}
 
-export function isAppError(error: unknown): error is AppError {
-  return error instanceof AppError;
-}
+  static unauthorized(message = "Authentication required"): AppError {
+    return new AppError(message, "UNAUTHORIZED", 401);
+  }
 
-/**
- * PostgreSQL unique-constraint violation, including when Drizzle wraps the
- * driver error.
- */
-export function isUniqueViolation(error: unknown): boolean {
-  let current: unknown = error;
+  static forbidden(message = "Access denied"): AppError {
+    return new AppError(message, "FORBIDDEN", 403);
+  }
 
-  while (current instanceof Error) {
-    if ("code" in current && current.code === "23505") {
-      return true;
+  static notFound(message = "Resource not found"): AppError {
+    return new AppError(message, "NOT_FOUND", 404);
+  }
+
+  static validation(message: string, details?: Record<string, unknown>): AppError {
+    return new AppError(message, "VALIDATION_ERROR", 400, details);
+  }
+
+  static conflict(message: string, details?: Record<string, unknown>): AppError {
+    return new AppError(message, "CONFLICT", 409, details);
+  }
+
+  static unbalanced(message = "Transaction debit and credit amounts must balance"): AppError {
+    return new AppError(message, "UNBALANCED_TRANSACTION", 400);
+  }
+
+  static toResponse(error: unknown): {
+    status: number;
+    body: { success: false; error: { code: string; message: string; details?: Record<string, unknown> } };
+  } {
+    if (error instanceof AppError) {
+      return {
+        status: error.statusCode,
+        body: {
+          success: false,
+          error: {
+            code: error.code,
+            message: error.message,
+            details: error.details,
+          },
+        },
+      };
     }
 
-    current = current.cause;
+    const message = error instanceof Error ? error.message : "An unexpected error occurred";
+    return {
+      status: 500,
+      body: {
+        success: false,
+        error: {
+          code: "INTERNAL_SERVER_ERROR",
+          message,
+        },
+      },
+    };
   }
-
-  return false;
 }

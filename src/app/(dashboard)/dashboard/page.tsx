@@ -1,367 +1,330 @@
 import Link from "next/link";
-
-import { getDb } from "@/db";
-import { listAccountsForUser } from "@/features/accounts/service";
-import { ACCOUNT_TYPE_LABELS } from "@/features/accounts/validation";
-import {
-  getAccountBalances,
-  getMonthlyCashFlow,
-  getPersonBalances,
-  listTransactionsForUser,
-} from "@/features/ledger/queries";
-import { requireUser } from "@/features/auth/session";
-import { formatDate } from "@/lib/dates/format";
-import { formatMinor } from "@/lib/money/money";
-
-export const dynamic = "force-dynamic";
-
-type Position = {
-  currency: string;
-  assets: bigint;
-  liabilities: bigint;
-  receivable: bigint;
-  payable: bigint;
-};
-
-const TYPE_BADGES: Record<string, string> = {
-  income: "bg-emerald-50 text-emerald-700",
-  expense: "bg-rose-50 text-rose-700",
-  transfer: "bg-slate-100 text-slate-700",
-  loan_given: "bg-amber-50 text-amber-700",
-  loan_received: "bg-amber-50 text-amber-700",
-  repayment_received: "bg-emerald-50 text-emerald-700",
-  repayment_made: "bg-rose-50 text-rose-700",
-  adjustment: "bg-indigo-50 text-indigo-700",
-  reversal: "bg-slate-200 text-slate-800",
-};
+import { requireUser } from "../../../features/auth/service";
+import { getDashboardInsights } from "../../../features/insights/service";
+import { listAccounts } from "../../../features/accounts/service";
+import { searchTransactions } from "../../../features/query-builder/service";
+import { formatMoney, DEFAULT_CURRENCY } from "../../../lib/money/money";
+import { formatDate } from "../../../lib/dates/format";
 
 export default async function DashboardPage() {
   const user = await requireUser();
-  const db = getDb();
+  const [insights, accounts, recentTxResult] = await Promise.all([
+    getDashboardInsights(user.id, DEFAULT_CURRENCY),
+    listAccounts(user.id),
+    searchTransactions(user.id, { limit: 6, offset: 0 }),
+  ]);
 
-  const [accounts, balances, personBalances, cashFlow, recent] =
-    await Promise.all([
-      listAccountsForUser(db, user.id),
-      getAccountBalances(db, user.id),
-      getPersonBalances(db, user.id),
-      getMonthlyCashFlow(db, user.id, 6),
-      listTransactionsForUser(db, user.id, { pageSize: 8 }),
-    ]);
-
-  const positions = new Map<string, Position>();
-  const position = (currency: string): Position => {
-    const existing = positions.get(currency) ?? {
-      currency,
-      assets: 0n,
-      liabilities: 0n,
-      receivable: 0n,
-      payable: 0n,
-    };
-    positions.set(currency, existing);
-    return existing;
+  const defaultNet = insights.netPositionByCurrency[DEFAULT_CURRENCY] || {
+    assetsMinor: 0n,
+    liabilitiesMinor: 0n,
+    netMinor: 0n,
   };
 
-  for (const account of accounts) {
-    const signed = balances.get(account.id) ?? 0n;
-    const entry = position(account.currency);
-
-    if (account.accountType === "credit") {
-      entry.liabilities += -signed;
-    } else {
-      entry.assets += signed;
-    }
-  }
-
-  for (const balance of personBalances) {
-    const entry = position(balance.currency);
-
-    if (balance.netMinor > 0n) {
-      entry.receivable += balance.netMinor;
-    } else {
-      entry.payable += -balance.netMinor;
-    }
-  }
-
-  const currencies = [...positions.values()].sort((a, b) =>
-    a.currency.localeCompare(b.currency),
-  );
-
-  const monthly = new Map<string, Array<{ month: string; income: bigint; expense: bigint }>>();
-  for (const row of cashFlow) {
-    const list = monthly.get(row.currency) ?? [];
-    list.push({
-      month: row.month,
-      income: row.incomeMinor,
-      expense: row.expenseMinor,
-    });
-    monthly.set(row.currency, list);
-  }
-
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 py-8">
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+    <div className="space-y-8" id="dashboard-page">
+      {/* Top Banner / Welcome */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Overview</h1>
-          <p className="text-sm text-ink-muted">
-            Balances come straight from the ledger, never from cached numbers.
+          <h1 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight">
+            Financial Overview
+          </h1>
+          <p className="text-sm text-slate-400 mt-1">
+            Authoritative double-entry ledger &bull; Fully synchronized &bull; {DEFAULT_CURRENCY}
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex items-center gap-3">
           <Link
             href="/transactions/new?type=expense"
-            className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-white transition hover:bg-accent-strong"
+            className="px-4 py-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-semibold transition"
           >
-            Record expense
+            - Expense
           </Link>
           <Link
             href="/transactions/new?type=income"
-            className="rounded-md border border-border-subtle bg-white px-3 py-2 text-sm font-medium transition hover:bg-surface-muted"
+            className="px-4 py-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 text-xs font-semibold transition"
           >
-            Record income
+            + Income
           </Link>
           <Link
             href="/transactions/new?type=transfer"
-            className="rounded-md border border-border-subtle bg-white px-3 py-2 text-sm font-medium transition hover:bg-surface-muted"
+            className="px-4 py-2 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/20 text-xs font-semibold transition"
           >
-            Transfer
+            ⇄ Transfer
           </Link>
         </div>
       </div>
 
-      {currencies.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-border-subtle bg-white px-4 py-10 text-center text-sm text-ink-muted">
-          No financial position yet. Create an account, then record income or an
-          opening balance.
-        </p>
-      ) : (
-        <section aria-labelledby="position-heading" className="mb-8">
-          <h2 id="position-heading" className="mb-3 text-lg font-semibold">
-            Position
-          </h2>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            {currencies.map((entry) => {
-              const net =
-                entry.assets + entry.receivable - entry.liabilities - entry.payable;
-
-              return (
-                <div
-                  key={entry.currency}
-                  className="rounded-lg border border-border-subtle bg-white p-4"
-                >
-                  <div className="mb-3 flex items-baseline justify-between">
-                    <span className="text-xs font-medium uppercase tracking-widest text-ink-muted">
-                      {entry.currency}
-                    </span>
-                    <span className="text-lg font-semibold">
-                      {formatMinor(net, entry.currency)}
-                    </span>
-                  </div>
-
-                  <dl className="grid grid-cols-2 gap-y-2 text-sm">
-                    <dt className="text-ink-muted">Assets</dt>
-                    <dd className="text-right">
-                      {formatMinor(entry.assets, entry.currency)}
-                    </dd>
-                    <dt className="text-ink-muted">Liabilities</dt>
-                    <dd className="text-right">
-                      {formatMinor(entry.liabilities, entry.currency)}
-                    </dd>
-                    <dt className="text-ink-muted">Owed to you</dt>
-                    <dd className="text-right">
-                      {formatMinor(entry.receivable, entry.currency)}
-                    </dd>
-                    <dt className="text-ink-muted">You owe</dt>
-                    <dd className="text-right">
-                      {formatMinor(entry.payable, entry.currency)}
-                    </dd>
-                  </dl>
-                </div>
-              );
-            })}
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Net Position */}
+        <div className="glass-panel p-5 rounded-2xl relative overflow-hidden">
+          <div className="text-xs font-medium text-slate-400 mb-1">Net Worth</div>
+          <div className={`text-2xl font-black ${defaultNet.netMinor >= 0n ? "text-emerald-400" : "text-rose-400"}`}>
+            {formatMoney(defaultNet.netMinor, DEFAULT_CURRENCY)}
           </div>
-        </section>
-      )}
+          <div className="text-[11px] text-slate-500 mt-2 flex justify-between">
+            <span>Assets: {formatMoney(defaultNet.assetsMinor, DEFAULT_CURRENCY)}</span>
+            <span>Debt: {formatMoney(defaultNet.liabilitiesMinor, DEFAULT_CURRENCY)}</span>
+          </div>
+        </div>
 
-      <div className="grid gap-8 md:grid-cols-2">
-        <section aria-labelledby="accounts-heading">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 id="accounts-heading" className="text-lg font-semibold">
-              Accounts
-            </h2>
-            <Link href="/accounts" className="text-sm text-accent hover:underline">
-              Manage
-            </Link>
+        {/* Total Assets */}
+        <div className="glass-panel p-5 rounded-2xl">
+          <div className="text-xs font-medium text-slate-400 mb-1">Owned Cash & Bank</div>
+          <div className="text-2xl font-black text-white">
+            {formatMoney(defaultNet.assetsMinor, DEFAULT_CURRENCY)}
+          </div>
+          <div className="text-[11px] text-emerald-400 mt-2 flex items-center gap-1">
+            <span>Across {accounts.length} registered accounts</span>
+          </div>
+        </div>
+
+        {/* Receivables (Owed to you) */}
+        <div className="glass-panel p-5 rounded-2xl">
+          <div className="text-xs font-medium text-slate-400 mb-1">Money Lent (Receivable)</div>
+          <div className="text-2xl font-black text-emerald-400">
+            {formatMoney(insights.totalReceivablesMinor, DEFAULT_CURRENCY)}
+          </div>
+          <div className="text-[11px] text-slate-400 mt-2">
+            Owed to you by friends & borrowers
+          </div>
+        </div>
+
+        {/* Payables (You owe) */}
+        <div className="glass-panel p-5 rounded-2xl">
+          <div className="text-xs font-medium text-slate-400 mb-1">Money Borrowed (Payable)</div>
+          <div className="text-2xl font-black text-amber-400">
+            {formatMoney(insights.totalPayablesMinor, DEFAULT_CURRENCY)}
+          </div>
+          <div className="text-[11px] text-slate-400 mt-2">
+            You owe to others
+          </div>
+        </div>
+      </div>
+
+      {/* Visualizations: Monthly Cash Flow & Spending Breakdown */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Monthly Cash Flow Bars */}
+        <div className="lg:col-span-2 glass-panel p-6 rounded-2xl">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-base font-bold text-white">Cash Flow (Last 6 Months)</h2>
+              <p className="text-xs text-slate-400">Excludes internal transfers between your own accounts</p>
+            </div>
+            <div className="flex items-center gap-3 text-xs">
+              <span className="flex items-center gap-1.5 text-slate-300">
+                <span className="w-2.5 h-2.5 rounded bg-emerald-500" /> Income
+              </span>
+              <span className="flex items-center gap-1.5 text-slate-300">
+                <span className="w-2.5 h-2.5 rounded bg-rose-500" /> Expense
+              </span>
+            </div>
           </div>
 
-          {accounts.length === 0 ? (
-            <p className="rounded-lg border border-dashed border-border-subtle bg-white px-4 py-6 text-sm text-ink-muted">
-              No accounts yet.{" "}
-              <Link href="/accounts" className="text-accent hover:underline">
-                Add your first account
-              </Link>
-              .
-            </p>
-          ) : (
-            <ul className="space-y-2">
-              {accounts.map((account) => {
-                const signed = balances.get(account.id) ?? 0n;
-                const display =
-                  account.accountType === "credit" ? -signed : signed;
-
-                return (
-                  <li key={account.id}>
-                    <Link
-                      href={`/accounts/${account.id}`}
-                      className="flex items-center justify-between gap-3 rounded-lg border border-border-subtle bg-white px-4 py-3 transition hover:border-accent/40"
-                    >
-                      <span className="min-w-0">
-                        <span className="block truncate text-sm font-medium">
-                          {account.name}
-                        </span>
-                        <span className="text-xs text-ink-muted">
-                          {ACCOUNT_TYPE_LABELS[account.accountType]}
-                          {account.archivedAt ? " · archived" : ""}
-                        </span>
-                      </span>
-                      <span className="font-mono text-sm">
-                        {formatMinor(display, account.currency)}{" "}
-                        <span className="text-xs text-ink-muted">
-                          {account.currency}
-                        </span>
-                      </span>
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
-
-        <section aria-labelledby="cashflow-heading">
-          <h2 id="cashflow-heading" className="mb-3 text-lg font-semibold">
-            Monthly cash flow
-          </h2>
-
-          {monthly.size === 0 ? (
-            <p className="rounded-lg border border-border-subtle bg-white px-4 py-6 text-sm text-ink-muted">
-              No income or expenses recorded in the last six months.
-            </p>
+          {insights.monthlyCashFlow.length === 0 ? (
+            <div className="py-12 text-center text-sm text-slate-500">
+              No cash flow records yet. Record income or expenses to see trends.
+            </div>
           ) : (
             <div className="space-y-4">
-              {[...monthly.entries()].map(([currency, months]) => {
-                const max = months.reduce(
-                  (value, row) =>
-                    row.income > value
-                      ? row.income
-                      : row.expense > value
-                        ? row.expense
-                        : value,
-                  0n,
+              {insights.monthlyCashFlow.map((flow) => {
+                const maxVal = Math.max(
+                  Number(flow.incomeMinor),
+                  Number(flow.expenseMinor),
+                  100,
                 );
+                const incPct = (Number(flow.incomeMinor) / maxVal) * 100;
+                const expPct = (Number(flow.expenseMinor) / maxVal) * 100;
 
                 return (
-                  <div
-                    key={currency}
-                    className="rounded-lg border border-border-subtle bg-white p-4"
-                  >
-                    <p className="mb-3 text-xs font-medium uppercase tracking-widest text-ink-muted">
-                      {currency}
-                    </p>
-                    <ul className="space-y-2">
-                      {months.map((row) => {
-                        const incomeWidth =
-                          max > 0n ? Number((row.income * 100n) / max) : 0;
-                        const expenseWidth =
-                          max > 0n ? Number((row.expense * 100n) / max) : 0;
-                        const net = row.income - row.expense;
+                  <div key={flow.month} className="space-y-1.5">
+                    <div className="flex justify-between text-xs">
+                      <span className="font-semibold text-slate-300">{flow.month}</span>
+                      <span className={`font-mono ${flow.netCashFlowMinor >= 0n ? "text-emerald-400" : "text-rose-400"}`}>
+                        Net: {formatMoney(flow.netCashFlowMinor, DEFAULT_CURRENCY)}
+                      </span>
+                    </div>
 
-                        return (
-                          <li key={row.month} className="text-xs">
-                            <div className="mb-1 flex justify-between">
-                              <span className="text-ink-muted">{row.month}</span>
-                              <span
-                                className={
-                                  net < 0n ? "text-danger" : "text-emerald-700"
-                                }
-                              >
-                                {net >= 0n ? "+" : ""}
-                                {formatMinor(net, currency)}
-                              </span>
-                            </div>
-                            <div className="space-y-1">
-                              <div className="h-1.5 rounded bg-surface-muted">
-                                <div
-                                  className="h-1.5 rounded bg-emerald-500"
-                                  style={{ width: `${incomeWidth}%` }}
-                                />
-                              </div>
-                              <div className="h-1.5 rounded bg-surface-muted">
-                                <div
-                                  className="h-1.5 rounded bg-rose-400"
-                                  style={{ width: `${expenseWidth}%` }}
-                                />
-                              </div>
-                            </div>
-                          </li>
-                        );
-                      })}
-                    </ul>
+                    <div className="grid grid-cols-2 gap-2 h-4 bg-slate-900/60 rounded-lg p-0.5 overflow-hidden">
+                      {/* Income Bar */}
+                      <div className="flex justify-end">
+                        <div
+                          className="bg-emerald-500 rounded-sm transition-all duration-500 h-full"
+                          style={{ width: `${incPct}%` }}
+                          title={`Income: ${formatMoney(flow.incomeMinor, DEFAULT_CURRENCY)}`}
+                        />
+                      </div>
+                      {/* Expense Bar */}
+                      <div className="flex justify-start">
+                        <div
+                          className="bg-rose-500 rounded-sm transition-all duration-500 h-full"
+                          style={{ width: `${expPct}%` }}
+                          title={`Expense: ${formatMoney(flow.expenseMinor, DEFAULT_CURRENCY)}`}
+                        />
+                      </div>
+                    </div>
                   </div>
                 );
               })}
             </div>
           )}
-        </section>
-      </div>
-
-      <section aria-labelledby="recent-heading" className="mt-8">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 id="recent-heading" className="text-lg font-semibold">
-            Recent transactions
-          </h2>
-          <Link href="/transactions" className="text-sm text-accent hover:underline">
-            View all
-          </Link>
         </div>
 
-        {recent.items.length === 0 ? (
-          <p className="rounded-lg border border-border-subtle bg-white px-4 py-6 text-sm text-ink-muted">
-            No transactions yet.
-          </p>
-        ) : (
-          <ul className="divide-y divide-border-subtle overflow-hidden rounded-lg border border-border-subtle bg-white">
-            {recent.items.map((item) => (
-              <li key={item.id}>
-                <Link
-                  href={`/transactions/${item.id}`}
-                  className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 transition hover:bg-surface-muted"
-                >
-                  <span className="flex min-w-0 items-center gap-2">
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${TYPE_BADGES[item.type] ?? "bg-slate-100 text-slate-700"}`}
-                    >
-                      {item.type.replaceAll("_", " ")}
-                    </span>
-                    <span className="truncate text-sm">{item.description}</span>
-                    {item.reversedAt ? (
-                      <span className="text-[11px] text-ink-muted">(reversed)</span>
-                    ) : null}
-                  </span>
-                  <span className="text-sm text-ink-muted">
-                    {formatDate(item.occurredAt)} ·{" "}
-                    <span className="font-mono text-ink">
-                      {formatMinor(item.amountMinor, item.currency)} {item.currency}
-                    </span>
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+        {/* Category Spending Breakdown */}
+        <div className="glass-panel p-6 rounded-2xl flex flex-col justify-between">
+          <div>
+            <h2 className="text-base font-bold text-white mb-1">Spending by Tag</h2>
+            <p className="text-xs text-slate-400 mb-6">Current month expenses</p>
 
+            {insights.spendingByTag.length === 0 ? (
+              <div className="py-12 text-center text-sm text-slate-500">
+                No tagged expenses recorded this month.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {insights.spendingByTag.slice(0, 5).map((tag) => (
+                  <div key={tag.tagId} className="space-y-1">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-300 font-medium">{tag.tagName}</span>
+                      <span className="text-slate-400 font-mono">
+                        {formatMoney(tag.totalMinor, DEFAULT_CURRENCY)} ({tag.percentage}%)
+                      </span>
+                    </div>
+                    <div className="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-emerald-500 to-cyan-500 rounded-full"
+                        style={{ width: `${tag.percentage}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <Link
+            href="/tags"
+            className="mt-4 pt-3 border-t border-white/5 text-xs text-emerald-400 hover:text-emerald-300 font-semibold block text-center"
+          >
+            Manage Tag Hierarchy &rarr;
+          </Link>
+        </div>
+      </div>
+
+      {/* Account Cards & Recent Transactions */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Accounts List */}
+        <div className="glass-panel p-6 rounded-2xl">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base font-bold text-white">Accounts</h2>
+            <Link href="/accounts" className="text-xs text-emerald-400 hover:text-emerald-300 font-semibold">
+              View All ({accounts.length})
+            </Link>
+          </div>
+
+          <div className="space-y-2.5">
+            {accounts.slice(0, 5).map((acc) => (
+              <Link
+                key={acc.id}
+                href={`/accounts/${acc.id}`}
+                className="flex items-center justify-between p-3 rounded-xl bg-slate-900/60 hover:bg-slate-800 border border-white/5 transition"
+              >
+                <div>
+                  <div className="text-sm font-semibold text-white">{acc.name}</div>
+                  <div className="text-[10px] text-slate-400 uppercase tracking-wider">{acc.accountType}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm font-mono font-bold text-white">
+                    {formatMoney(acc.balanceMinor, acc.currency)}
+                  </div>
+                  <div className="text-[10px] text-slate-500">{acc.currency}</div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        {/* Recent Transactions */}
+        <div className="lg:col-span-2 glass-panel p-6 rounded-2xl">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base font-bold text-white">Recent Financial Events</h2>
+            <Link href="/transactions" className="text-xs text-emerald-400 hover:text-emerald-300 font-semibold">
+              Browse All &rarr;
+            </Link>
+          </div>
+
+          {recentTxResult.items.length === 0 ? (
+            <div className="py-12 text-center text-sm text-slate-500">
+              No transactions recorded yet. Click &quot;New Transaction&quot; to begin.
+            </div>
+          ) : (
+            <div className="divide-y divide-white/5">
+              {recentTxResult.items.map((tx) => (
+                <div key={tx.id} className="py-3 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold ${
+                        tx.type === "income"
+                          ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                          : tx.type === "expense"
+                            ? "bg-rose-500/10 text-rose-400 border border-rose-500/20"
+                            : tx.type === "transfer"
+                              ? "bg-cyan-500/10 text-cyan-400 border border-cyan-500/20"
+                              : "bg-violet-500/10 text-violet-400 border border-violet-500/20"
+                      }`}
+                    >
+                      {tx.type === "income" ? "+" : tx.type === "expense" ? "-" : "⇄"}
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold text-white flex items-center gap-2">
+                        <span>{tx.description}</span>
+                        {tx.reversedAt && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 border border-rose-500/30">
+                            Reversed
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-slate-400 flex items-center gap-2">
+                        <span>{formatDate(tx.occurredAt)}</span>
+                        <span>&bull;</span>
+                        <span className="capitalize">{tx.type.replace("_", " ")}</span>
+                        {tx.tags.length > 0 && (
+                          <>
+                            <span>&bull;</span>
+                            <span className="text-emerald-400">{tx.tags.map((t) => t.name).join(", ")}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="text-right font-mono">
+                    <div
+                      className={`text-sm font-bold ${
+                        tx.type === "income"
+                          ? "text-emerald-400"
+                          : tx.type === "expense"
+                            ? "text-rose-400"
+                            : "text-slate-200"
+                      }`}
+                    >
+                      {tx.type === "income" ? "+" : tx.type === "expense" ? "-" : ""}
+                      {formatMoney(tx.amountMinor, tx.currency)}
+                    </div>
+                    <Link
+                      href={`/transactions/${tx.id}`}
+                      className="text-[11px] text-slate-500 hover:text-emerald-400 transition"
+                    >
+                      Details &rarr;
+                    </Link>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

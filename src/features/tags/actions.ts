@@ -1,63 +1,58 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requireUser } from "../auth/service";
+import {
+  createTag,
+  updateTag,
+  archiveTag,
+  restoreTag,
+} from "./service";
+import { createTagSchema, updateTagSchema } from "./validation";
 
-import { getDb } from "@/db";
-import { requireUser } from "@/features/auth/session";
-import { AppError, type FieldErrors, type FormState } from "@/lib/errors/app-error";
-
-import { createTagForUser, setTagArchivedForUser } from "./service";
-import { createTagSchema, setTagArchivedSchema } from "./validation";
-
-export async function createTagAction(
-  _previousState: FormState,
-  formData: FormData,
-): Promise<FormState> {
+export async function createTagAction(formData: FormData) {
   const user = await requireUser();
-  const parsed = createTagSchema.safeParse({
-    name: formData.get("name") ?? "",
-    description: formData.get("description") ?? "",
-    parentId: formData.get("parentId") ?? "",
-  });
 
-  if (!parsed.success) {
-    return { fieldErrors: parsed.error.flatten().fieldErrors as FieldErrors };
-  }
+  const name = formData.get("name") as string;
+  const parentId = (formData.get("parentId") as string) || null;
+  const description = (formData.get("description") as string) || undefined;
 
   try {
-    await createTagForUser(getDb(), user.id, parsed.data);
-  } catch (error) {
-    if (error instanceof AppError) {
-      return { error: error.message, fieldErrors: error.fieldErrors };
-    }
-
-    console.error("Tag creation failed", error);
-
-    return { error: "Could not create the tag. Please try again." };
+    const input = createTagSchema.parse({ name, parentId, description });
+    await createTag(user.id, input);
+    revalidatePath("/tags");
+    revalidatePath("/transactions/new");
+    return { success: true };
+  } catch (err: any) {
+    return { error: err?.message || "Failed to create tag" };
   }
-
-  revalidatePath("/tags");
-
-  return { success: `Tag "${parsed.data.name}" created` };
 }
 
-export async function setTagArchivedAction(formData: FormData): Promise<void> {
+export async function updateTagAction(tagId: string, formData: FormData) {
   const user = await requireUser();
-  const parsed = setTagArchivedSchema.safeParse({
-    tagId: formData.get("tagId") ?? "",
-    archived: formData.get("archived") ?? "",
-  });
 
-  if (!parsed.success) {
-    return;
+  const name = formData.get("name") as string;
+  const parentId = (formData.get("parentId") as string) || null;
+  const description = (formData.get("description") as string) || undefined;
+
+  try {
+    const input = updateTagSchema.parse({ name, parentId, description });
+    await updateTag(user.id, tagId, input);
+    revalidatePath("/tags");
+    return { success: true };
+  } catch (err: any) {
+    return { error: err?.message || "Failed to update tag" };
   }
+}
 
-  await setTagArchivedForUser(
-    getDb(),
-    user.id,
-    parsed.data.tagId,
-    parsed.data.archived === "true",
-  );
+export async function archiveTagAction(tagId: string): Promise<void> {
+  const user = await requireUser();
+  await archiveTag(user.id, tagId);
+  revalidatePath("/tags");
+}
 
+export async function restoreTagAction(tagId: string): Promise<void> {
+  const user = await requireUser();
+  await restoreTag(user.id, tagId);
   revalidatePath("/tags");
 }
