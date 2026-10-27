@@ -214,14 +214,14 @@ export function InteractiveTimelineView({
             >
               ⏱️ {t.timeline.viewTimeline}
             </button>
-            <button
+            {/* <button
               onClick={() => setViewMode("compact")}
               className={`rounded-lg px-2.5 py-1 font-medium transition cursor-pointer ${
                 viewMode === "compact" ? "bg-slate-800 text-slate-100" : "text-slate-400 hover:text-slate-200"
               }`}
             >
               📋 {t.timeline.viewCompact}
-            </button>
+            </button> */}
           </div>
         </div>
       </div>

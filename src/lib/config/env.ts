@@ -16,11 +16,13 @@ export function getEnv(): Env {
     return parsedEnv;
   }
 
+  const isTest = process.env.NODE_ENV === "test" || process.env.VITEST === "true";
+
   const result = envSchema.safeParse({
-    DATABASE_URL: process.env.DATABASE_URL,
-    SESSION_SECRET: process.env.SESSION_SECRET,
+    DATABASE_URL: process.env.DATABASE_URL || (isTest ? "postgresql://postgres:postgres@localhost:5432/in_memory_test" : undefined),
+    SESSION_SECRET: process.env.SESSION_SECRET || (isTest ? "test_session_secret_at_least_32_characters_long_for_tests!" : undefined),
     APP_URL: process.env.APP_URL || "http://localhost:3000",
-    NODE_ENV: process.env.NODE_ENV || "development",
+    NODE_ENV: process.env.NODE_ENV || (isTest ? "test" : "development"),
   });
 
   if (!result.success) {

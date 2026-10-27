@@ -120,8 +120,8 @@ export async function listAccounts(
   const balances = await db
     .select({
       accountId: ledgerEntries.accountId,
-      debitSum: sql<string>`coalesce(sum(amount_minor) filter (where direction = 'debit'), 0)`,
-      creditSum: sql<string>`coalesce(sum(amount_minor) filter (where direction = 'credit'), 0)`,
+      debitSum: sql<string>`coalesce(sum(case when direction = 'debit' then amount_minor else 0 end), 0)`,
+      creditSum: sql<string>`coalesce(sum(case when direction = 'credit' then amount_minor else 0 end), 0)`,
     })
     .from(ledgerEntries)
     .where(eq(ledgerEntries.userId, userId))
@@ -163,8 +163,8 @@ export async function getAccountById(
 
   const [balanceRow] = await db
     .select({
-      debitSum: sql<string>`coalesce(sum(amount_minor) filter (where direction = 'debit'), 0)`,
-      creditSum: sql<string>`coalesce(sum(amount_minor) filter (where direction = 'credit'), 0)`,
+      debitSum: sql<string>`coalesce(sum(case when direction = 'debit' then amount_minor else 0 end), 0)`,
+      creditSum: sql<string>`coalesce(sum(case when direction = 'credit' then amount_minor else 0 end), 0)`,
     })
     .from(ledgerEntries)
     .where(and(eq(ledgerEntries.userId, userId), eq(ledgerEntries.accountId, accountId)));
