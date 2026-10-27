@@ -22,6 +22,7 @@ import {
   Square,
 } from "lucide-react";
 import { RangeMergeToolbar, type SelectedTransactionInfo } from "../batch/RangeMergeToolbar";
+import { formatFromNow, formatDate } from "../../lib/date/dayjs";
 
 export interface TimelineTransactionItem {
   id: string;
@@ -109,20 +110,12 @@ export function InteractiveTimelineView({
   const getRelativeDateLabel = (dateStr: string) => {
     const today = new Date().toISOString().slice(0, 10);
     const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    const fromNowText = formatFromNow(dateStr, locale);
 
-    if (dateStr === today) return t.timeline.today;
-    if (dateStr === yesterday) return t.timeline.yesterday;
+    if (dateStr === today) return `${t.timeline.today} (${fromNowText})`;
+    if (dateStr === yesterday) return `${t.timeline.yesterday} (${fromNowText})`;
 
-    try {
-      const d = new Date(dateStr);
-      return d.toLocaleDateString(locale === "bn" ? "bn-BD" : "en-US", {
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-      });
-    } catch {
-      return dateStr;
-    }
+    return `${formatDate(dateStr, "D MMMM, YYYY", locale)} · ${fromNowText}`;
   };
 
   const getTypeVisual = (type: string) => {
@@ -283,10 +276,7 @@ export function InteractiveTimelineView({
               </div>
 
               {/* Connected Timeline Axis & Cards */}
-              <div className="relative pl-6 sm:pl-8 space-y-3">
-                {/* Vertical Timeline Track Line */}
-                <div className="absolute left-2.5 sm:left-3.5 top-3 bottom-3 w-0.5 bg-slate-800/90" />
-
+              <div className="space-y-4">
                 {items.map((tx) => {
                   const visual = getTypeVisual(tx.type);
                   const Icon = visual.icon;
@@ -294,99 +284,128 @@ export function InteractiveTimelineView({
                   const isSelected = selectedIds.includes(tx.id);
                   const isReversed = !!tx.reversedAt;
 
+                  const yearStr = formatDate(tx.occurredAt, "YYYY", locale);
+                  const dateStrFormatted = formatDate(tx.occurredAt, "MMM D", locale);
+                  const timeStr = formatDate(tx.occurredAt, "h:mm A", locale);
+                  const fromNowStr = formatFromNow(tx.occurredAt, locale);
+
                   return (
-                    <div key={tx.id} className="relative group">
-                      {/* Timeline Node Point on Axis */}
-                      <div
-                        className={`absolute -left-6 sm:-left-8 top-4 flex h-5 w-5 items-center justify-center rounded-full border-2 border-[#090d16] ${visual.nodeColor} transition-transform group-hover:scale-125 z-10`}
-                      >
-                        <div className="h-1.5 w-1.5 rounded-full bg-white" />
+                    <div key={tx.id} className="relative flex items-start group">
+                      {/* Left Column: Date & Timestamp (Right-aligned next to axis, matching reference design) */}
+                      <div className="hidden sm:flex flex-col items-end w-24 md:w-28 shrink-0 pr-3 pt-3.5 select-none text-right">
+                        <span className="text-xs font-bold text-slate-200 tracking-tight">
+                          {yearStr}
+                        </span>
+                        <span className="text-[11px] font-semibold text-slate-400">
+                          {dateStrFormatted}
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-mono">
+                          {timeStr}
+                        </span>
                       </div>
 
-                      {/* Transaction Interactive Card */}
-                      <div
-                        onClick={() => setExpandedId(isExpanded ? null : tx.id)}
-                        className={`cursor-pointer rounded-2xl border transition-all duration-200 ${visual.accentBorder} ${
-                          isSelected
-                            ? "border-emerald-500/60 bg-emerald-950/20 shadow-lg shadow-emerald-950/40"
-                            : isReversed
-                            ? "border-slate-800/50 bg-slate-900/30 opacity-60"
-                            : "border-slate-800/80 bg-slate-900/70 hover:border-slate-700 hover:bg-slate-900 shadow-sm"
-                        } p-4`}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          {/* Left: Checkbox + Icon + Details */}
-                          <div className="flex items-start gap-3">
-                            <button
-                              type="button"
-                              onClick={(e) => toggleSelect(tx.id, e)}
-                              className="mt-0.5 p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-emerald-400 transition"
-                            >
-                              {isSelected ? (
-                                <CheckSquare className="h-4 w-4 text-emerald-400" />
-                              ) : (
-                                <Square className="h-4 w-4" />
-                              )}
-                            </button>
+                      {/* Center Axis with Continuous Vertical Line & Circular Bullet Node Dot • */}
+                      <div className="relative flex flex-col items-center shrink-0 self-stretch w-7 sm:w-8">
+                        {/* Vertical line through entire node height */}
+                        <div className="absolute top-0 bottom-0 w-0.5 bg-slate-800 group-hover:bg-slate-700 transition" />
+                        {/* Circular Bullet Node Dot • */}
+                        <div
+                          className={`relative top-4 z-10 flex h-4 w-4 items-center justify-center rounded-full border-2 border-[#090d16] ${visual.nodeColor} shadow-md transition-transform group-hover:scale-125`}
+                        >
+                          <div className="h-1.5 w-1.5 rounded-full bg-white" />
+                        </div>
+                      </div>
 
-                            <div
-                              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border ${visual.color}`}
-                            >
-                              <Icon className="h-5 w-5" />
-                            </div>
-
-                            <div className="space-y-1">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <h5 className="text-sm font-semibold text-slate-100 group-hover:text-emerald-400 transition">
-                                  {tx.description}
-                                </h5>
-                                {isReversed && (
-                                  <span className="rounded-full bg-rose-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-rose-300">
-                                    {t.timeline.reversedBadge}
-                                  </span>
+                      {/* Right Column: Transaction Interactive Card with Title and fromNow Subtitle */}
+                      <div className="flex-1 min-w-0 pl-1.5 sm:pl-3 pb-2">
+                        <div
+                          onClick={() => setExpandedId(isExpanded ? null : tx.id)}
+                          className={`cursor-pointer rounded-2xl border transition-all duration-200 ${visual.accentBorder} ${
+                            isSelected
+                              ? "border-emerald-500/60 bg-emerald-950/20 shadow-lg shadow-emerald-950/40"
+                              : isReversed
+                              ? "border-slate-800/50 bg-slate-900/30 opacity-60"
+                              : "border-slate-800/80 bg-slate-900/70 hover:border-slate-700 hover:bg-slate-900 shadow-sm"
+                          } p-4`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            {/* Left: Checkbox + Icon + Details */}
+                            <div className="flex items-start gap-3 min-w-0">
+                              <button
+                                type="button"
+                                onClick={(e) => toggleSelect(tx.id, e)}
+                                className="mt-0.5 p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-emerald-400 transition shrink-0 cursor-pointer"
+                              >
+                                {isSelected ? (
+                                  <CheckSquare className="h-4 w-4 text-emerald-400" />
+                                ) : (
+                                  <Square className="h-4 w-4" />
                                 )}
+                              </button>
+
+                              <div
+                                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border ${visual.color}`}
+                              >
+                                <Icon className="h-5 w-5" />
                               </div>
 
-                              {/* Badges: Account, Tag, Person */}
-                              <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-400">
-                                {tx.accountName && (
-                                  <span className="flex items-center gap-1 rounded-lg bg-slate-800/90 px-2 py-0.5 text-slate-300">
-                                    <Wallet className="h-3 w-3 text-slate-400" />
-                                    {tx.accountName}
-                                  </span>
-                                )}
-
-                                {tx.tags &&
-                                  tx.tags.map((tag) => (
-                                    <span
-                                      key={tag.id}
-                                      className="flex items-center gap-1 rounded-lg bg-emerald-500/10 px-2 py-0.5 text-emerald-400 border border-emerald-500/20"
-                                    >
-                                      <TagIcon className="h-3 w-3" />
-                                      {tag.name}
+                              <div className="space-y-1 min-w-0">
+                                {/* Title (Description) */}
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <h5 className="text-sm font-bold text-slate-100 group-hover:text-emerald-400 transition truncate">
+                                    {tx.description}
+                                  </h5>
+                                  {isReversed && (
+                                    <span className="rounded-full bg-rose-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-rose-300">
+                                      {t.timeline.reversedBadge}
                                     </span>
-                                  ))}
+                                  )}
+                                </div>
 
-                                {tx.personName && (
-                                  <Link
-                                    href={`/${locale}/people`}
-                                    onClick={(e) => e.stopPropagation()}
-                                    className="flex items-center gap-1 rounded-lg bg-purple-500/10 px-2 py-0.5 text-purple-300 border border-purple-500/20 hover:bg-purple-500/20 transition"
-                                  >
-                                    <User className="h-3 w-3 text-purple-400" />
-                                    {tx.personName}
-                                  </Link>
-                                )}
+                                {/* Italic Relative Subtitle: from now (e.g. 2 hours ago, yesterday) */}
+                                <div className="flex flex-wrap items-center gap-2 text-xs">
+                                  <span className="italic font-serif font-medium text-amber-400/90 tracking-wide">
+                                    {fromNowStr}
+                                  </span>
+                                  {/* Mobile-only date indicator */}
+                                  <span className="sm:hidden text-[10px] text-slate-500 font-mono">
+                                    • {dateStrFormatted}, {timeStr}
+                                  </span>
+                                </div>
 
-                                <span className="text-[10px] text-slate-500">
-                                  {new Date(tx.occurredAt).toLocaleTimeString([], {
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                  })}
-                                </span>
+                                {/* Badges: Account, Tag, Person */}
+                                <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[11px] text-slate-400">
+                                  {tx.accountName && (
+                                    <span className="flex items-center gap-1 rounded-lg bg-slate-800/90 px-2 py-0.5 text-slate-300">
+                                      <Wallet className="h-3 w-3 text-slate-400" />
+                                      {tx.accountName}
+                                    </span>
+                                  )}
+
+                                  {tx.tags &&
+                                    tx.tags.map((tag) => (
+                                      <span
+                                        key={tag.id}
+                                        className="flex items-center gap-1 rounded-lg bg-emerald-500/10 px-2 py-0.5 text-emerald-400 border border-emerald-500/20"
+                                      >
+                                        <TagIcon className="h-3 w-3" />
+                                        {tag.name}
+                                      </span>
+                                    ))}
+
+                                  {tx.personName && (
+                                    <Link
+                                      href={`/${locale}/people`}
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="flex items-center gap-1 rounded-lg bg-purple-500/10 px-2 py-0.5 text-purple-300 border border-purple-500/20 hover:bg-purple-500/20 transition"
+                                    >
+                                      <User className="h-3 w-3 text-purple-400" />
+                                      {tx.personName}
+                                    </Link>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                          </div>
 
                           {/* Right: Amount & Expand Arrow */}
                           <div className="flex flex-col items-end justify-between shrink-0">
@@ -478,8 +497,9 @@ export function InteractiveTimelineView({
                         )}
                       </div>
                     </div>
-                  );
-                })}
+                  </div>
+                );
+              })}
               </div>
             </div>
           );

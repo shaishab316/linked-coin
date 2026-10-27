@@ -5,6 +5,11 @@ import {
   ResponsiveContainer,
   BarChart,
   Bar,
+  AreaChart,
+  Area,
+  ComposedChart,
+  Line,
+  ReferenceLine,
   XAxis,
   YAxis,
   Tooltip,
@@ -21,9 +26,13 @@ import {
   Layers,
   Sparkles,
   Check,
+  BarChart2,
+  Activity,
+  CandlestickChart,
 } from "lucide-react";
 
 export type GranularityPeriod = "day" | "week" | "month" | "year";
+export type ChartVisualizationType = "bar" | "area" | "trading";
 
 export interface GranularPointProps {
   key: string;
@@ -80,6 +89,7 @@ export function CashFlowChart({
 }: CashFlowChartProps) {
   const { locale, t } = useI18n();
   const [period, setPeriod] = useState<GranularityPeriod>("month");
+  const [chartType, setChartType] = useState<ChartVisualizationType>("bar");
   const [isComparing, setIsComparing] = useState<boolean>(false);
 
   // Determine active dataset
@@ -102,24 +112,34 @@ export function CashFlowChart({
   // Transform timeline data for standard view
   const timelineChartData = useMemo(() => {
     if (activeGranular && activeGranular.points.length > 0) {
-      return activeGranular.points.map((p) => ({
-        name: p.label,
-        inflow: Number(BigInt(p.incomeMinor)) / 100,
-        outflow: Number(BigInt(p.expenseMinor)) / 100,
-        incomeMinor: BigInt(p.incomeMinor),
-        expenseMinor: BigInt(p.expenseMinor),
-        netMinor: BigInt(p.netMinor),
-      }));
+      return activeGranular.points.map((p) => {
+        const inVal = Number(BigInt(p.incomeMinor)) / 100;
+        const outVal = Number(BigInt(p.expenseMinor)) / 100;
+        return {
+          name: p.label,
+          inflow: inVal,
+          outflow: outVal,
+          netflow: inVal - outVal,
+          incomeMinor: BigInt(p.incomeMinor),
+          expenseMinor: BigInt(p.expenseMinor),
+          netMinor: BigInt(p.netMinor),
+        };
+      });
     }
     // Fallback if granularData not passed
-    return fallbackData.map((d) => ({
-      name: d.month,
-      inflow: Number(BigInt(d.incomeMinor)) / 100,
-      outflow: Number(BigInt(d.expenseMinor)) / 100,
-      incomeMinor: BigInt(d.incomeMinor),
-      expenseMinor: BigInt(d.expenseMinor),
-      netMinor: BigInt(d.netMinor),
-    }));
+    return fallbackData.map((d) => {
+      const inVal = Number(BigInt(d.incomeMinor)) / 100;
+      const outVal = Number(BigInt(d.expenseMinor)) / 100;
+      return {
+        name: d.month,
+        inflow: inVal,
+        outflow: outVal,
+        netflow: inVal - outVal,
+        incomeMinor: BigInt(d.incomeMinor),
+        expenseMinor: BigInt(d.expenseMinor),
+        netMinor: BigInt(d.netMinor),
+      };
+    });
   }, [activeGranular, fallbackData]);
 
   // Comparison data
@@ -138,6 +158,7 @@ export function CashFlowChart({
         periodLabel: comparisonInfo.previous.periodLabel,
         inflow: prevIn,
         outflow: prevOut,
+        netflow: prevIn - prevOut,
         incomeMinor: BigInt(comparisonInfo.previous.incomeMinor),
         expenseMinor: BigInt(comparisonInfo.previous.expenseMinor),
         netMinor: BigInt(comparisonInfo.previous.netMinor),
@@ -148,6 +169,7 @@ export function CashFlowChart({
         periodLabel: comparisonInfo.current.periodLabel,
         inflow: currIn,
         outflow: currOut,
+        netflow: currIn - currOut,
         incomeMinor: BigInt(comparisonInfo.current.incomeMinor),
         expenseMinor: BigInt(comparisonInfo.current.expenseMinor),
         netMinor: BigInt(comparisonInfo.current.netMinor),
@@ -181,12 +203,33 @@ export function CashFlowChart({
     };
   }, [comparisonInfo]);
 
+  // Trading stats (peak inflow, peak outflow, overall net flow)
+  const tradingStats = useMemo(() => {
+    let peakIn = 0;
+    let peakOut = 0;
+    let totalNet = 0;
+
+    const src = isComparing ? comparisonChartData : timelineChartData;
+    for (const d of src) {
+      if (d.inflow > peakIn) peakIn = d.inflow;
+      if (d.outflow > peakOut) peakOut = d.outflow;
+      totalNet += d.netflow;
+    }
+
+    return {
+      peakIn: BigInt(Math.round(peakIn * 100)),
+      peakOut: BigInt(Math.round(peakOut * 100)),
+      totalNet: BigInt(Math.round(totalNet * 100)),
+      isSurplus: totalNet >= 0,
+    };
+  }, [isComparing, comparisonChartData, timelineChartData]);
+
   // Tooltip
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       const point = payload[0].payload;
       return (
-        <div className="rounded-2xl border border-slate-700 bg-slate-900/95 p-3.5 shadow-2xl backdrop-blur-md min-w-[200px]">
+        <div className="rounded-2xl border border-slate-700 bg-slate-900/95 p-3.5 shadow-2xl backdrop-blur-md min-w-[210px]">
           <div className="mb-2 border-b border-slate-800 pb-1.5 flex items-center justify-between">
             <p className="text-xs font-bold text-slate-200">{label}</p>
             {point.periodLabel && (
@@ -231,39 +274,90 @@ export function CashFlowChart({
 
   return (
     <div className="space-y-4 pt-1">
-      {/* 1. Header Toolbar with Filter Pills & Compare Switcher */}
+      {/* 1. Header Toolbar with Filter Pills, Chart View Switcher & Compare Switcher */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
-        {/* Period Granularity Buttons: Day | Week | Month | Year */}
-        <div className="flex items-center p-1 rounded-2xl bg-slate-950/70 border border-slate-800 text-xs font-semibold">
-          {(["day", "week", "month", "year"] as GranularityPeriod[]).map((p) => {
-            const isActive = period === p;
-            const label =
-              p === "day"
-                ? t.dashboard.periodDay || "Day"
-                : p === "week"
-                ? t.dashboard.periodWeek || "Week"
-                : p === "month"
-                ? t.dashboard.periodMonth || "Month"
-                : t.dashboard.periodYear || "Year";
+        {/* Left: Period Granularity Buttons & Chart Type Switcher */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Period Pills: Day | Week | Month | Year */}
+          <div className="flex items-center p-1 rounded-2xl bg-slate-950/70 border border-slate-800 text-xs font-semibold">
+            {(["day", "week", "month", "year"] as GranularityPeriod[]).map((p) => {
+              const isActive = period === p;
+              const label =
+                p === "day"
+                  ? t.dashboard.periodDay || "Day"
+                  : p === "week"
+                  ? t.dashboard.periodWeek || "Week"
+                  : p === "month"
+                  ? t.dashboard.periodMonth || "Month"
+                  : t.dashboard.periodYear || "Year";
 
-            return (
-              <button
-                key={p}
-                type="button"
-                onClick={() => setPeriod(p)}
-                className={`relative px-3 py-1.5 rounded-xl transition-all duration-200 cursor-pointer ${
-                  isActive
-                    ? "bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/40 shadow-sm"
-                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
-                }`}
-              >
-                {label}
-              </button>
-            );
-          })}
+              return (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setPeriod(p)}
+                  className={`relative px-3 py-1.5 rounded-xl transition-all duration-200 cursor-pointer ${
+                    isActive
+                      ? "bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/40 shadow-sm"
+                      : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Chart Type View Switcher: Bar | Area | Trading */}
+          <div className="flex items-center p-1 rounded-2xl bg-slate-950/70 border border-slate-800 text-xs font-semibold">
+            {/* Bar Mode */}
+            <button
+              type="button"
+              onClick={() => setChartType("bar")}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl transition-all duration-200 cursor-pointer ${
+                chartType === "bar"
+                  ? "bg-slate-800 text-slate-100 font-bold border border-slate-700 shadow-sm"
+                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+              }`}
+              title="Bar Chart View"
+            >
+              <BarChart2 className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">{t.dashboard.chartTypeBar || "Bars"}</span>
+            </button>
+
+            {/* Area Mode */}
+            <button
+              type="button"
+              onClick={() => setChartType("area")}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl transition-all duration-200 cursor-pointer ${
+                chartType === "area"
+                  ? "bg-purple-500/20 text-purple-300 font-bold border border-purple-500/40 shadow-sm"
+                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+              }`}
+              title="Area Gradient Waves View"
+            >
+              <Activity className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">{t.dashboard.chartTypeArea || "Waves"}</span>
+            </button>
+
+            {/* Trading View Mode */}
+            <button
+              type="button"
+              onClick={() => setChartType("trading")}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl transition-all duration-200 cursor-pointer ${
+                chartType === "trading"
+                  ? "bg-sky-500/20 text-sky-300 font-bold border border-sky-500/40 shadow-sm"
+                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+              }`}
+              title="Trading Financial View"
+            >
+              <CandlestickChart className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">{t.dashboard.chartTypeTrading || "Trading"}</span>
+            </button>
+          </div>
         </div>
 
-        {/* Compare to Previous Toggle Button */}
+        {/* Right: Compare to Previous Toggle Button */}
         {comparisonInfo && (
           <button
             type="button"
@@ -342,7 +436,50 @@ export function CashFlowChart({
         </div>
       )}
 
-      {/* 3. Recharts Visual Chart */}
+      {/* 3. Trading View Ribbon (Shown when chartType === 'trading') */}
+      {chartType === "trading" && (
+        <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2 rounded-2xl border border-slate-800 bg-slate-950/80 text-xs">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-400">{t.dashboard.peakInflow || "Peak In"}:</span>
+              <span className="font-bold text-emerald-400">
+                {formatLocalizedAmount(tradingStats.peakIn, currency, locale, false)}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-400">{t.dashboard.peakOutflow || "Peak Out"}:</span>
+              <span className="font-bold text-rose-400">
+                {formatLocalizedAmount(tradingStats.peakOut, currency, locale, false)}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-slate-400 font-medium">Trajectory:</span>
+            <span
+              className={`flex items-center gap-1 px-2.5 py-0.5 rounded-full font-bold text-[11px] ${
+                tradingStats.isSurplus
+                  ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                  : "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+              }`}
+            >
+              {tradingStats.isSurplus ? (
+                <>
+                  <TrendingUp className="h-3 w-3" />
+                  <span>{t.dashboard.netSurplus || "Surplus"}</span>
+                </>
+              ) : (
+                <>
+                  <TrendingDown className="h-3 w-3" />
+                  <span>{t.dashboard.netDeficit || "Deficit"}</span>
+                </>
+              )}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* 4. Visual Chart Renderers */}
       {chartData.length === 0 ? (
         <div className="flex h-64 items-center justify-center rounded-2xl border border-slate-800/80 bg-slate-900/40 text-sm text-slate-400">
           {t.dashboard.noTransactionsYet}
@@ -350,54 +487,206 @@ export function CashFlowChart({
       ) : (
         <div className="h-72 w-full pt-2">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart
-              data={chartData}
-              margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-              <XAxis
-                dataKey="name"
-                tick={{ fill: "#94a3b8", fontSize: 12 }}
-                axisLine={{ stroke: "#334155" }}
-                tickLine={false}
-              />
-              <YAxis
-                tick={{ fill: "#94a3b8", fontSize: 12 }}
-                axisLine={false}
-                tickLine={false}
-                tickFormatter={(val) =>
-                  `${val >= 1000 ? `${(val / 1000).toFixed(0)}k` : val}`
-                }
-              />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend
-                verticalAlign="top"
-                align="right"
-                iconType="circle"
-                wrapperStyle={{ paddingBottom: "12px", fontSize: "12px" }}
-                formatter={(value) => (
-                  <span className="text-slate-300">
-                    {value === "inflow"
-                      ? t.dashboard.addIncome
-                      : t.dashboard.addExpense}
-                  </span>
-                )}
-              />
-              <Bar
-                dataKey="inflow"
-                name="inflow"
-                fill="#10B981"
-                radius={[6, 6, 0, 0]}
-                maxBarSize={isComparing ? 48 : 36}
-              />
-              <Bar
-                dataKey="outflow"
-                name="outflow"
-                fill="#F43F5E"
-                radius={[6, 6, 0, 0]}
-                maxBarSize={isComparing ? 48 : 36}
-              />
-            </BarChart>
+            {/* Visual Mode 1: Bar Chart */}
+            {chartType === "bar" && (
+              <BarChart
+                data={chartData}
+                margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                <XAxis
+                  dataKey="name"
+                  tick={{ fill: "#94a3b8", fontSize: 12 }}
+                  axisLine={{ stroke: "#334155" }}
+                  tickLine={false}
+                />
+                <YAxis
+                  tick={{ fill: "#94a3b8", fontSize: 12 }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={(val) =>
+                    `${val >= 1000 ? `${(val / 1000).toFixed(0)}k` : val}`
+                  }
+                />
+                <Tooltip content={<CustomTooltip />} />
+                <Legend
+                  verticalAlign="top"
+                  align="right"
+                  iconType="circle"
+                  wrapperStyle={{ paddingBottom: "12px", fontSize: "12px" }}
+                  formatter={(value) => (
+                    <span className="text-slate-300">
+                      {value === "inflow"
+                        ? t.dashboard.addIncome
+                        : t.dashboard.addExpense}
+                    </span>
+                  )}
+                />
+                <Bar
+                  dataKey="inflow"
+                  name="inflow"
+                  fill="#10B981"
+                  radius={[6, 6, 0, 0]}
+                  maxBarSize={isComparing ? 48 : 36}
+                />
+                <Bar
+                  dataKey="outflow"
+                  name="outflow"
+                  fill="#F43F5E"
+                  radius={[6, 6, 0, 0]}
+                  maxBarSize={isComparing ? 48 : 36}
+                />
+              </BarChart>
+            )}
+
+            {/* Visual Mode 2: Area Wave Chart with Gradient Fills */}
+            {chartType === "area" && (
+              <AreaChart
+                data={chartData}
+                margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+              >
+                <defs>
+                  <linearGradient id="colorCashInflow" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10B981" stopOpacity={0.75} />
+                    <stop offset="95%" stopColor="#10B981" stopOpacity={0.0} />
+                  </linearGradient>
+                  <linearGradient id="colorCashOutflow" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#F43F5E" stopOpacity={0.65} />
+                    <stop offset="95%" stopColor="#F43F5E" stopOpacity={0.0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                <XAxis
+                  dataKey="name"
+                  tick={{ fill: "#94a3b8", fontSize: 12 }}
+                  axisLine={{ stroke: "#334155" }}
+                  tickLine={false}
+                />
+                <YAxis
+                  tick={{ fill: "#94a3b8", fontSize: 12 }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={(val) =>
+                    `${val >= 1000 ? `${(val / 1000).toFixed(0)}k` : val}`
+                  }
+                />
+                <Tooltip content={<CustomTooltip />} />
+                <Legend
+                  verticalAlign="top"
+                  align="right"
+                  iconType="circle"
+                  wrapperStyle={{ paddingBottom: "12px", fontSize: "12px" }}
+                  formatter={(value) => (
+                    <span className="text-slate-300">
+                      {value === "inflow"
+                        ? t.dashboard.addIncome
+                        : t.dashboard.addExpense}
+                    </span>
+                  )}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="inflow"
+                  name="inflow"
+                  stroke="#10B981"
+                  strokeWidth={2.5}
+                  fillOpacity={1}
+                  fill="url(#colorCashInflow)"
+                  activeDot={{ r: 5, stroke: "#10B981", strokeWidth: 2, fill: "#fff" }}
+                  isAnimationActive={true}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="outflow"
+                  name="outflow"
+                  stroke="#F43F5E"
+                  strokeWidth={2.5}
+                  fillOpacity={1}
+                  fill="url(#colorCashOutflow)"
+                  activeDot={{ r: 5, stroke: "#F43F5E", strokeWidth: 2, fill: "#fff" }}
+                  isAnimationActive={true}
+                />
+              </AreaChart>
+            )}
+
+            {/* Visual Mode 3: Trading Financial View (ComposedChart with Volume & Net Curve) */}
+            {chartType === "trading" && (
+              <ComposedChart
+                data={chartData}
+                margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+              >
+                <defs>
+                  <linearGradient id="tradingNetGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#38BDF8" stopOpacity={0.65} />
+                    <stop offset="95%" stopColor="#38BDF8" stopOpacity={0.0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={true} />
+                <ReferenceLine y={0} stroke="#64748b" strokeDasharray="3 3" />
+                <XAxis
+                  dataKey="name"
+                  tick={{ fill: "#94a3b8", fontSize: 12 }}
+                  axisLine={{ stroke: "#334155" }}
+                  tickLine={false}
+                />
+                <YAxis
+                  tick={{ fill: "#94a3b8", fontSize: 12 }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={(val) =>
+                    `${val >= 1000 ? `${(val / 1000).toFixed(0)}k` : val}`
+                  }
+                />
+                <Tooltip
+                  cursor={{ stroke: "#64748b", strokeWidth: 1, strokeDasharray: "3 3" }}
+                  content={<CustomTooltip />}
+                />
+                <Legend
+                  verticalAlign="top"
+                  align="right"
+                  iconType="circle"
+                  wrapperStyle={{ paddingBottom: "12px", fontSize: "12px" }}
+                  formatter={(value) => (
+                    <span className="text-slate-300">
+                      {value === "inflow"
+                        ? t.dashboard.addIncome
+                        : value === "outflow"
+                        ? t.dashboard.addExpense
+                        : "Net Momentum"}
+                    </span>
+                  )}
+                />
+                {/* Background Volume Pillars */}
+                <Bar
+                  dataKey="inflow"
+                  name="inflow"
+                  fill="#10B981"
+                  opacity={0.45}
+                  barSize={18}
+                  radius={[4, 4, 0, 0]}
+                />
+                <Bar
+                  dataKey="outflow"
+                  name="outflow"
+                  fill="#F43F5E"
+                  opacity={0.45}
+                  barSize={18}
+                  radius={[4, 4, 0, 0]}
+                />
+                {/* Dynamic Net Cash Flow Trajectory Curve */}
+                <Area
+                  type="monotone"
+                  dataKey="netflow"
+                  name="netflow"
+                  stroke="#38BDF8"
+                  strokeWidth={3}
+                  fillOpacity={1}
+                  fill="url(#tradingNetGrad)"
+                  dot={{ r: 3, fill: "#38BDF8", stroke: "#0f172a", strokeWidth: 1.5 }}
+                  activeDot={{ r: 6, fill: "#38BDF8", stroke: "#fff", strokeWidth: 2 }}
+                />
+              </ComposedChart>
+            )}
           </ResponsiveContainer>
         </div>
       )}

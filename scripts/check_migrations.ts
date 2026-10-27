@@ -5,7 +5,7 @@ const { Pool } = pg;
 
 async function main() {
   const pool = new Pool({
-    connectionString: process.env.DATABASE_URL || "postgresql://linked_coin:linked_coin_dev@localhost:55432/linked_coin",
+    connectionString: process.env.DATABASE_URL,
   });
   const res = await pool.query("SELECT * FROM drizzle.__drizzle_migrations");
   console.log("Recorded migrations:", res.rows);
