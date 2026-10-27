@@ -1,6 +1,6 @@
 import React from "react";
 import { requireUser } from "../../../../features/auth/service";
-import { searchTransactions } from "../../../../features/query-builder/service";
+import { searchTransactions, listSavedQueries } from "../../../../features/query-builder/service";
 import { parseQueryString, astToChips } from "../../../../features/query-builder/parser";
 import { listAccounts } from "../../../../features/accounts/service";
 import { listPeople } from "../../../../features/people/service";
@@ -35,11 +35,12 @@ export default async function LocalizedQueryPage({
   ast.limit = 50;
   ast.offset = offset;
 
-  const [result, accounts, people, tags] = await Promise.all([
+  const [result, accounts, people, tags, savedQueries] = await Promise.all([
     searchTransactions(user.id, ast),
     listAccounts(user.id),
     listPeople(user.id),
     listTags(user.id),
+    listSavedQueries(user.id),
   ]);
 
   const chips = astToChips(ast);
@@ -95,6 +96,7 @@ export default async function LocalizedQueryPage({
         accounts={accounts.map((a) => ({ id: a.id, name: a.name }))}
         tags={tags.map((t) => ({ id: t.id, name: t.name }))}
         people={people.map((p) => ({ id: p.id, name: p.name }))}
+        savedQueries={savedQueries.map((sq) => ({ id: sq.id, name: sq.name, queryAst: sq.queryAst }))}
         basePath={`/${locale}/query`}
       />
     </div>

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { createTagAction } from "../actions";
+import { TagPicker } from "./tag-picker";
 import type { Tag, TagType } from "../../../db/schema";
 import { TAG_TYPES } from "../../../db/schema/tags";
 
@@ -27,6 +28,7 @@ export function CreateTagDialog({ existingTags, defaultTagType }: CreateTagDialo
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [tagType, setTagType] = useState<TagType>(defaultTagType || "transaction");
+  const [selectedParentId, setSelectedParentId] = useState("");
 
   // Filter parent options to same type only
   const sameTags = existingTags.filter((t) => t.tagType === tagType);
@@ -85,7 +87,10 @@ export function CreateTagDialog({ existingTags, defaultTagType }: CreateTagDialo
                     <button
                       key={type}
                       type="button"
-                      onClick={() => setTagType(type)}
+                      onClick={() => {
+                        setTagType(type);
+                        setSelectedParentId("");
+                      }}
                       className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition cursor-pointer ${
                         tagType === type
                           ? TAG_TYPE_COLORS[type]
@@ -121,17 +126,17 @@ export function CreateTagDialog({ existingTags, defaultTagType }: CreateTagDialo
                 <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
                   Parent Tag (Optional)
                 </label>
-                <select
+                <TagPicker
+                  mode="single"
+                  availableTags={sameTags}
+                  selectedTagId={selectedParentId}
+                  onSelect={setSelectedParentId}
                   name="parentId"
-                  className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-white/10 text-white text-xs focus:outline-none focus:border-emerald-500"
-                >
-                  <option value="">None (Top-Level)</option>
-                  {sameTags.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                    </option>
-                  ))}
-                </select>
+                  allowSelectParent={true}
+                  allowNone={true}
+                  noneLabel="None (Top-Level)"
+                  placeholder="None (Top-Level)"
+                />
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-2">

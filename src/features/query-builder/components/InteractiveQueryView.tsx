@@ -16,6 +16,7 @@ interface InteractiveQueryViewProps {
   accounts: { id: string; name: string }[];
   tags: { id: string; name: string }[];
   people: { id: string; name: string }[];
+  savedQueries?: { id: string; name: string; queryAst: any }[];
   basePath: string;
 }
 
@@ -27,6 +28,7 @@ export function InteractiveQueryView({
   accounts,
   tags,
   people,
+  savedQueries = [],
   basePath,
 }: InteractiveQueryViewProps) {
   const router = useRouter();
@@ -69,6 +71,7 @@ export function InteractiveQueryView({
           accounts={accounts}
           tags={tags}
           people={people}
+          savedQueries={savedQueries}
         />
 
         {/* Active Filter Chips */}

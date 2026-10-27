@@ -48,7 +48,7 @@ export interface TimelineTransactionItem {
 
 interface InteractiveTimelineViewProps {
   transactions: TimelineTransactionItem[];
-  allTags?: { id: string; name: string }[];
+  allTags?: Array<{ id: string; name: string; parentId?: string | null; tagType?: string | null; [key: string]: any }>;
   currency?: string;
   basePath?: string;
 }

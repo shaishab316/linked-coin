@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { useI18n } from "../../lib/i18n/context";
 import { formatLocalizedAmount } from "../../lib/i18n";
 import { CheckSquare, Layers, Download, X, Tag as TagIcon, FileText } from "lucide-react";
+import { TagPicker, type TagPickerItem } from "../../features/tags/components/tag-picker";
 
 export interface SelectedTransactionInfo {
   id: string;
@@ -19,7 +20,7 @@ export interface SelectedTransactionInfo {
 interface RangeMergeToolbarProps {
   selectedIds: string[];
   transactions: SelectedTransactionInfo[];
-  allTags?: { id: string; name: string }[];
+  allTags?: TagPickerItem[];
   currency?: string;
   onClearSelection: () => void;
   onApplyBatchTag?: (tagId: string) => Promise<void>;
@@ -199,23 +200,18 @@ export function RangeMergeToolbar({
 
             {/* Unified Tag Assignment (Optional) */}
             {allTags.length > 0 && (
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
                   <TagIcon className="h-3.5 w-3.5 text-emerald-400" />
                   {t.batch.applyCommonTag}
                 </label>
-                <select
-                  value={selectedTagId}
-                  onChange={(e) => setSelectedTagId(e.target.value)}
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3.5 py-2.5 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none"
-                >
-                  <option value="">{t.batch.chooseTag}</option>
-                  {allTags.map((tag) => (
-                    <option key={tag.id} value={tag.id}>
-                      {tag.name}
-                    </option>
-                  ))}
-                </select>
+                <TagPicker
+                  mode="single"
+                  availableTags={allTags}
+                  selectedTagId={selectedTagId}
+                  onSelect={setSelectedTagId}
+                  placeholder={t.batch.chooseTag}
+                />
               </div>
             )}
 

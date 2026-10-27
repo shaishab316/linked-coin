@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createTransactionAction } from "../actions";
 import { SUPPORTED_CURRENCIES, DEFAULT_CURRENCY } from "../../../lib/money/money";
 import { useI18n } from "../../../lib/i18n/context";
+import { CascadingTagSelector } from "../../tags/components/cascading-tag-selector";
 import type { Account, Person, Tag } from "../../../db/schema";
 
 interface TransactionFormProps {
@@ -207,39 +208,25 @@ export function TransactionForm({
         )}
 
         {/* Date & Tags */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
-              Date & Time
-            </label>
-            <input
-              type="datetime-local"
-              name="occurredAt"
-              defaultValue={new Date().toISOString().slice(0, 16)}
-              className="w-full px-3 py-2 rounded-xl bg-slate-900/80 border border-white/10 text-white text-sm focus:outline-none focus:border-emerald-500"
-            />
-          </div>
+        {/* Date & Time */}
+        <div>
+          <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+            Date & Time
+          </label>
+          <input
+            type="datetime-local"
+            name="occurredAt"
+            defaultValue={new Date().toISOString().slice(0, 16)}
+            className="w-full px-4 py-2.5 rounded-xl bg-slate-900/80 border border-white/10 text-white text-sm focus:outline-none focus:border-emerald-500"
+          />
+        </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
-              Tags
-            </label>
-            <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto p-2 bg-slate-900/40 rounded-xl border border-white/5">
-              {tags.length === 0 ? (
-                <span className="text-xs text-slate-500">No tags created yet.</span>
-              ) : (
-                tags.map((t) => (
-                  <label
-                    key={t.id}
-                    className="flex items-center gap-1.5 text-xs text-slate-300 bg-slate-800/80 px-2.5 py-1 rounded-md border border-white/5 cursor-pointer hover:border-emerald-500/50"
-                  >
-                    <input type="checkbox" name="tagIds" value={t.id} className="rounded" />
-                    <span>{t.name}</span>
-                  </label>
-                ))
-              )}
-            </div>
-          </div>
+        {/* Hierarchical Cascading Tags */}
+        <div>
+          <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+            Categories & Tags
+          </label>
+          <CascadingTagSelector tags={tags} />
         </div>
 
         {/* Notes */}
