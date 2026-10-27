@@ -227,6 +227,108 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
           </div>
 
           <CashFlowChart
+            granularData={{
+              day: {
+                points: insights.granularCashFlow.day.points.map((p) => ({
+                  key: p.key,
+                  label: p.label,
+                  incomeMinor: p.incomeMinor.toString(),
+                  expenseMinor: p.expenseMinor.toString(),
+                  netMinor: p.netCashFlowMinor.toString(),
+                })),
+                comparison: {
+                  current: {
+                    label: insights.granularCashFlow.day.comparison.current.label,
+                    periodLabel: insights.granularCashFlow.day.comparison.current.periodLabel,
+                    incomeMinor: insights.granularCashFlow.day.comparison.current.incomeMinor.toString(),
+                    expenseMinor: insights.granularCashFlow.day.comparison.current.expenseMinor.toString(),
+                    netMinor: insights.granularCashFlow.day.comparison.current.netMinor.toString(),
+                  },
+                  previous: {
+                    label: insights.granularCashFlow.day.comparison.previous.label,
+                    periodLabel: insights.granularCashFlow.day.comparison.previous.periodLabel,
+                    incomeMinor: insights.granularCashFlow.day.comparison.previous.incomeMinor.toString(),
+                    expenseMinor: insights.granularCashFlow.day.comparison.previous.expenseMinor.toString(),
+                    netMinor: insights.granularCashFlow.day.comparison.previous.netMinor.toString(),
+                  },
+                },
+              },
+              week: {
+                points: insights.granularCashFlow.week.points.map((p) => ({
+                  key: p.key,
+                  label: p.label,
+                  incomeMinor: p.incomeMinor.toString(),
+                  expenseMinor: p.expenseMinor.toString(),
+                  netMinor: p.netCashFlowMinor.toString(),
+                })),
+                comparison: {
+                  current: {
+                    label: insights.granularCashFlow.week.comparison.current.label,
+                    periodLabel: insights.granularCashFlow.week.comparison.current.periodLabel,
+                    incomeMinor: insights.granularCashFlow.week.comparison.current.incomeMinor.toString(),
+                    expenseMinor: insights.granularCashFlow.week.comparison.current.expenseMinor.toString(),
+                    netMinor: insights.granularCashFlow.week.comparison.current.netMinor.toString(),
+                  },
+                  previous: {
+                    label: insights.granularCashFlow.week.comparison.previous.label,
+                    periodLabel: insights.granularCashFlow.week.comparison.previous.periodLabel,
+                    incomeMinor: insights.granularCashFlow.week.comparison.previous.incomeMinor.toString(),
+                    expenseMinor: insights.granularCashFlow.week.comparison.previous.expenseMinor.toString(),
+                    netMinor: insights.granularCashFlow.week.comparison.previous.netMinor.toString(),
+                  },
+                },
+              },
+              month: {
+                points: insights.granularCashFlow.month.points.map((p) => ({
+                  key: p.key,
+                  label: p.label,
+                  incomeMinor: p.incomeMinor.toString(),
+                  expenseMinor: p.expenseMinor.toString(),
+                  netMinor: p.netCashFlowMinor.toString(),
+                })),
+                comparison: {
+                  current: {
+                    label: insights.granularCashFlow.month.comparison.current.label,
+                    periodLabel: insights.granularCashFlow.month.comparison.current.periodLabel,
+                    incomeMinor: insights.granularCashFlow.month.comparison.current.incomeMinor.toString(),
+                    expenseMinor: insights.granularCashFlow.month.comparison.current.expenseMinor.toString(),
+                    netMinor: insights.granularCashFlow.month.comparison.current.netMinor.toString(),
+                  },
+                  previous: {
+                    label: insights.granularCashFlow.month.comparison.previous.label,
+                    periodLabel: insights.granularCashFlow.month.comparison.previous.periodLabel,
+                    incomeMinor: insights.granularCashFlow.month.comparison.previous.incomeMinor.toString(),
+                    expenseMinor: insights.granularCashFlow.month.comparison.previous.expenseMinor.toString(),
+                    netMinor: insights.granularCashFlow.month.comparison.previous.netMinor.toString(),
+                  },
+                },
+              },
+              year: {
+                points: insights.granularCashFlow.year.points.map((p) => ({
+                  key: p.key,
+                  label: p.label,
+                  incomeMinor: p.incomeMinor.toString(),
+                  expenseMinor: p.expenseMinor.toString(),
+                  netMinor: p.netCashFlowMinor.toString(),
+                })),
+                comparison: {
+                  current: {
+                    label: insights.granularCashFlow.year.comparison.current.label,
+                    periodLabel: insights.granularCashFlow.year.comparison.current.periodLabel,
+                    incomeMinor: insights.granularCashFlow.year.comparison.current.incomeMinor.toString(),
+                    expenseMinor: insights.granularCashFlow.year.comparison.current.expenseMinor.toString(),
+                    netMinor: insights.granularCashFlow.year.comparison.current.netMinor.toString(),
+                  },
+                  previous: {
+                    label: insights.granularCashFlow.year.comparison.previous.label,
+                    periodLabel: insights.granularCashFlow.year.comparison.previous.periodLabel,
+                    incomeMinor: insights.granularCashFlow.year.comparison.previous.incomeMinor.toString(),
+                    expenseMinor: insights.granularCashFlow.year.comparison.previous.expenseMinor.toString(),
+                    netMinor: insights.granularCashFlow.year.comparison.previous.netMinor.toString(),
+                  },
+                },
+              },
+            }}
             data={insights.monthlyCashFlow.map((m) => ({
               month: m.month,
               incomeMinor: m.incomeMinor.toString(),
