@@ -154,10 +154,15 @@ export const bn: Dictionary = {
   },
   tags: {
     title: "ক্যাটাগরি ও ট্যাগ",
-    subtitle: "খাত অনুযায়ী খরচ ভাগ করতে মূল ও উপ-ক্যাটাগরি তৈরি করুন",
+    subtitle: "লেনদেন, ব্যক্তি ও অ্যাকাউন্টকে ট্যাগ দিয়ে সাজান",
     newTag: "নতুন ক্যাটাগরি",
     parentCategory: "মূল ক্যাটাগরি (ঐচ্ছিক)",
     noTagsYet: "এখনো কোনো ক্যাটাগরি তৈরি করা হয়নি।",
+    typeTransaction: "লেনদেন",
+    typePerson: "ব্যক্তি",
+    typeAccount: "অ্যাকাউন্ট",
+    tagType: "ট্যাগের ধরন",
+    manageTags: "ট্যাগ পরিচালনা",
   },
   transactionForm: {
     newTitle: "নতুন লেনদেন লিপিবদ্ধ করুন",

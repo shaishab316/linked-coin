@@ -22,6 +22,13 @@
       "when": 1793086000000,
       "tag": "0002_add_sync_and_queries",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793096228665,
+      "tag": "0003_white_mastermind",
+      "breakpoints": true
     }
   ]
 }

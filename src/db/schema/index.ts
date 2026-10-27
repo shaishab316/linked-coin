@@ -5,6 +5,8 @@ export * from "./people";
 export * from "./tags";
 export * from "./ledger";
 export * from "./transaction-tags";
+export * from "./person-tags";
+export * from "./account-tags";
 export * from "./transaction-links";
 export * from "./financial-events";
 export * from "./sync";

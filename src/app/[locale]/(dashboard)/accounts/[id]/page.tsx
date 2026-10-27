@@ -5,8 +5,10 @@ import { requireUser } from "../../../../../features/auth/service";
 import { getAccountById } from "../../../../../features/accounts/service";
 import { archiveAccountAction, restoreAccountAction } from "../../../../../features/accounts/actions";
 import { searchTransactions } from "../../../../../features/query-builder/service";
+import { listTags, getAccountTagIds } from "../../../../../features/tags/service";
 import { getDictionary, formatLocalizedAmount, type Locale } from "../../../../../lib/i18n";
 import { InteractiveTimelineView } from "../../../../../components/timeline/InteractiveTimelineView";
+import { AccountTagsSection } from "../../../../../features/tags/components/account-tags-section";
 import { ArrowLeft, Archive, RotateCcw, Wallet } from "lucide-react";
 
 interface AccountDetailPageProps {
@@ -29,11 +31,15 @@ export default async function LocalizedAccountDetailPage({ params }: AccountDeta
     notFound();
   }
 
-  const txResult = await searchTransactions(user.id, {
-    accountIds: [account.id],
-    limit: 50,
-    offset: 0,
-  });
+  const [txResult, accountTagIds, accountTypeTags] = await Promise.all([
+    searchTransactions(user.id, {
+      accountIds: [account.id],
+      limit: 50,
+      offset: 0,
+    }),
+    getAccountTagIds(account.id),
+    listTags(user.id, false, "account"),
+  ]);
 
   const timelineItems = txResult.items.map((tx) => ({
     id: tx.id,
@@ -95,8 +101,8 @@ export default async function LocalizedAccountDetailPage({ params }: AccountDeta
       </div>
 
       {/* Account Info Header */}
-      <div className="rounded-3xl border border-slate-800 bg-slate-900/90 p-6 sm:p-8 shadow-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-6">
-        <div>
+      <div className="rounded-3xl border border-slate-800 bg-slate-900/90 p-6 sm:p-8 shadow-2xl flex flex-col sm:flex-row sm:items-start justify-between gap-6">
+        <div className="space-y-3">
           <div className="flex items-center gap-2 mb-2">
             <span className="text-[10px] uppercase font-bold tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
               {account.accountType}
@@ -111,6 +117,13 @@ export default async function LocalizedAccountDetailPage({ params }: AccountDeta
           {account.description && (
             <p className="text-xs text-slate-400 mt-1">{account.description}</p>
           )}
+
+          {/* Account Tags */}
+          <AccountTagsSection
+            accountId={account.id}
+            availableTags={accountTypeTags}
+            selectedTagIds={accountTagIds}
+          />
         </div>
 
         <div className="sm:text-right">

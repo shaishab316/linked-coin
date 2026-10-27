@@ -3,7 +3,7 @@
 **Date:** October 2026  
 **Status:** Completed & Verified  
 **Specifications:** [DEVELOPER_GUIDE.md](file:///c:/Users/Incognito/Projects/linked-coin/docs/DEVELOPER_GUIDE.md)  
-**Test Suite:** 19/19 Passing (`pnpm test`)  
+**Test Suite:** 22/22 Passing (`pnpm test`)  
 **Typecheck:** Clean (`pnpm typecheck`)  
 **Production Build:** Clean Next.js 16 build (`pnpm build`) with all 17 dynamic and static routes  
 
@@ -11,7 +11,7 @@
 
 ## 1. Executive Summary
 
-Linked Coin has been built completely fresh in strict alignment with the specifications set forth in [DEVELOPER_GUIDE.md](file:///c:/Users/Incognito/Projects/linked-coin/docs/DEVELOPER_GUIDE.md). No legacy or outdated code was retained. The implementation delivers an offline-first personal finance platform featuring double-entry atomic accounting, immutable append-only event logging, interpersonal debt tracking, hierarchical tag categorization, a unified query builder with tokenized parsing and filter chips, and full JSON/CSV data backup and export.
+Linked Coin has been built completely fresh in strict alignment with the specifications set forth in [DEVELOPER_GUIDE.md](file:///c:/Users/Incognito/Projects/linked-coin/docs/DEVELOPER_GUIDE.md). No legacy or outdated code was retained. The implementation delivers an offline-first personal finance platform featuring double-entry atomic accounting, immutable append-only event logging, interpersonal debt tracking, multi-type hierarchical tagging (transactions, people, accounts), a unified query builder with tokenized parsing and filter chips, and full JSON/CSV data backup and export.
 
 ---
 
@@ -44,17 +44,22 @@ Linked Coin has been built completely fresh in strict alignment with the specifi
 - **Supported Account Types:** Cash, Bank, Savings, Digital Wallet, Credit, and Custom accounts.
 - **Live Ledger Balances:** Balances are derived dynamically from unreversed ledger entries.
 - **Opening Balances:** Setting an initial balance creates an atomic `adjustment` transaction balancing against equity.
+- **Account Multi-Tagging:** Accounts can have multiple tags assigned (`account_tags` junction table).
 - **Safe Archiving:** Accounts can be archived and unarchived without affecting historical transactions or reports.
 
 ### 3.3 People & Personal Debt Tracking
 - **Interpersonal Ledgers:** Dedicated tracking for money lent (`loan_given`), borrowed (`loan_received`), and respective repayments (`repayment_received`, `repayment_made`).
 - **Clean Segregation:** Loans and repayments update the person's net balance (receivable vs. payable) without polluting income or expense reports.
+- **Person Multi-Tagging:** People contacts can have multiple tags assigned (`person_tags` junction table).
 - **Outstanding Summary:** The dashboard and People views display live receivables, payables, and transaction history per contact.
 
-### 3.4 Hierarchical Tags
-- **Tree Structure:** Tags support parent-child relationships (e.g., `Food -> Dining Out -> Cafes`).
-- **Multi-Tagging:** Transactions can be linked to multiple tags simultaneously via `transaction_tags`.
-- **Safe Removal:** Tags can be deleted without corrupting transaction entries.
+### 3.4 Multi-Type Hierarchical Tagging System
+- **Tag Types (`tag_type`):** Supports three scoped tag categories: `transaction` (expenses/incomes), `person` (e.g. VIP, Family, Vendor, Colleague), and `account` (e.g. Primary, Savings Goal, Emergency Fund).
+- **Type Scoping:** Names are uniquely scoped per `(userId, normalizedName, tagType)`, allowing distinct tags like "Personal" for people and "Personal" for accounts.
+- **Tree Structure:** Tags support parent-child relationships within their respective type (e.g., `Food -> Dining Out -> Cafes`).
+- **Multi-Tagging Junctions:** Transactions link via `transaction_tags`, people link via `person_tags`, and accounts link via `account_tags`.
+- **Inline Tag Picker:** Dynamic `TagPicker` chip component enabling instant adding and removing of tags on people and accounts.
+- **Safe Removal:** Tags can be deleted/archived without corrupting transaction entries or linked entities.
 
 ### 3.5 Unified Query Builder
 - **Tokenized Parsing (`parseQueryString`):**
@@ -78,6 +83,28 @@ Linked Coin has been built completely fresh in strict alignment with the specifi
 ### 3.8 Secure Authentication
 - **Password Hashing:** Argon2id with cryptographically random salts.
 - **Session Management:** Cryptographically random session tokens hashed with SHA-256 before storage in PostgreSQL; transmitted via secure `httpOnly`, `sameSite: "lax"` cookies.
+
+### 3.9 Internationalization (i18n) & Localized Routing (`en` / `bn`)
+- **Route Prefixing:** First-class support for `http://localhost:3002/[en|bn]/dashboard`, transactions, accounts, people, tags, query, data, and auth.
+- **Language Switcher:** Instant toggle between `🇬🇧 English` and `🇧🇩 বাংলা` in the navigation header that sets `NEXT_LOCALE` cookie and updates current route in real-time.
+- **Bengali Formatter:** Native Bengali digit converter (`toBanglaDigits`) and localized currency symbol formatting (`-৳৪৫০.০০`).
+- **Human-Friendly Logic:** Clear visual metaphors (টাকা এসেছে / টাকা খরচ হয়েছে / ধার দিয়েছেন / ধার নিয়েছেন) designed for non-technical users.
+
+### 3.10 Interactive UI, Recharts & Timeline View
+- **Recharts Integration:**
+  - `CashFlowChart`: Monthly Income vs. Expense comparison with custom tooltips and rounded bar gradients.
+  - `CategoryPieChart`: Interactive donut chart of spending distribution with color chips and percentage share.
+  - `DebtComparisonChart`: Receivables (People owe you) vs. Payables (You owe people) balance ratio.
+- **Interactive Chronological Timeline:**
+  - Visual timeline track with connecting axis and glowing event nodes (Inflow 🟢, Outflow 🔴, Transfer 🔵, Debt 🟡).
+  - Date groupings (Today, Yesterday, Date headers) with select-all-in-date shortcuts.
+  - Expandable transaction cards showing balanced double-entry ledger legs and notes.
+- **Autocomplete Search Bar:**
+  - Dynamic dropdown suggesting quick filters, user accounts, categories, and contacts on focus or keystroke.
+  - Quick clickable preset filter pills.
+- **Range Selection & Batch Merge Toolbar:**
+  - Sticky batch bar displaying selected count, total inflow, total outflow, and net total.
+  - Range Merge modal allowing users to review consolidated breakdowns, assign unified tags, and export selected batches.
 
 ---
 

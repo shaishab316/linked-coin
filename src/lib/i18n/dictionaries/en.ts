@@ -152,10 +152,15 @@ export const en = {
   },
   tags: {
     title: "Categories & Tags",
-    subtitle: "Organize your transactions into simple parent and child categories",
+    subtitle: "Organize transactions, people, and accounts with tags",
     newTag: "New Category",
     parentCategory: "Parent Category (Optional)",
-    noTagsYet: "No categories created yet.",
+    noTagsYet: "No tags in this category yet.",
+    typeTransaction: "Transaction",
+    typePerson: "Person",
+    typeAccount: "Account",
+    tagType: "Tag Type",
+    manageTags: "Manage Tags",
   },
   transactionForm: {
     newTitle: "Record New Transaction",

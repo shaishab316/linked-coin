@@ -4,7 +4,10 @@ import { requireUser } from "../../../../features/auth/service";
 import { listPeople } from "../../../../features/people/service";
 import { CreatePersonDialog } from "../../../../features/people/components/create-person-dialog";
 import { getDictionary, formatLocalizedAmount, type Locale } from "../../../../lib/i18n";
-import { User, Phone, HandCoins, ArrowDownLeft, ArrowUpRight } from "lucide-react";
+import { User, Phone, HandCoins, ArrowDownLeft, ArrowUpRight, Tag as TagIcon } from "lucide-react";
+import { db } from "../../../../db";
+import { personTags, tags } from "../../../../db/schema";
+import { eq } from "drizzle-orm";
 
 interface LocalizedPeoplePageProps {
   params: Promise<{
@@ -18,7 +21,20 @@ export default async function LocalizedPeoplePage({ params }: LocalizedPeoplePag
   const locale: Locale = rawLocale === "bn" ? "bn" : "en";
   const t = getDictionary(locale);
 
-  const people = await listPeople(user.id, true);
+  const [people, allPersonTags] = await Promise.all([
+    listPeople(user.id, true),
+    db
+      .select({ personId: personTags.personId, tagName: tags.name })
+      .from(personTags)
+      .innerJoin(tags, eq(personTags.tagId, tags.id)),
+  ]);
+
+  const tagsByPerson = allPersonTags.reduce((acc, row) => {
+    if (!acc[row.personId]) acc[row.personId] = [];
+    acc[row.personId].push(row.tagName);
+    return acc;
+  }, {} as Record<string, string[]>);
+
   const activePeople = people.filter((p) => !p.archivedAt);
   const archivedPeople = people.filter((p) => p.archivedAt);
 
@@ -96,6 +112,20 @@ export default async function LocalizedPeoplePage({ params }: LocalizedPeoplePag
                       )}
                     </div>
                   </div>
+
+                  {tagsByPerson[person.id]?.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-2 mb-1">
+                      {tagsByPerson[person.id].map((tag) => (
+                        <span
+                          key={tag}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                        >
+                          <TagIcon className="h-2.5 w-2.5" />
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="pt-4 border-t border-slate-800/80 flex items-baseline justify-between">

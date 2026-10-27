@@ -4,13 +4,35 @@ import { listTags, buildTagTree, type TagTreeNode } from "../../../../features/t
 import { CreateTagDialog } from "../../../../features/tags/components/create-tag-dialog";
 import { archiveTagAction, restoreTagAction } from "../../../../features/tags/actions";
 import { getDictionary, type Locale } from "../../../../lib/i18n";
-import { Tag as TagIcon, ChevronRight, Archive, RotateCcw } from "lucide-react";
+import { Tag as TagIcon, ChevronRight, Archive, RotateCcw, Users, Wallet, ReceiptText } from "lucide-react";
+import type { TagType } from "../../../../db/schema";
 
 interface LocalizedTagsPageProps {
   params: Promise<{
     locale: string;
   }>;
 }
+
+const TYPE_META: Record<TagType, { label: string; labelBn: string; icon: typeof TagIcon; color: string }> = {
+  transaction: {
+    label: "Transaction Tags",
+    labelBn: "লেনদেনের ট্যাগ",
+    icon: ReceiptText,
+    color: "text-emerald-400",
+  },
+  person: {
+    label: "Person Tags",
+    labelBn: "ব্যক্তির ট্যাগ",
+    icon: Users,
+    color: "text-blue-400",
+  },
+  account: {
+    label: "Account Tags",
+    labelBn: "হিসাবের ট্যাগ",
+    icon: Wallet,
+    color: "text-amber-400",
+  },
+};
 
 export default async function LocalizedTagsPage({ params }: LocalizedTagsPageProps) {
   const user = await requireUser();
@@ -21,7 +43,8 @@ export default async function LocalizedTagsPage({ params }: LocalizedTagsPagePro
   const allTags = await listTags(user.id, true);
   const activeTags = allTags.filter((tag) => !tag.archivedAt);
   const archivedTags = allTags.filter((tag) => tag.archivedAt);
-  const tagTree = buildTagTree(activeTags);
+
+  const tagTypes: TagType[] = ["transaction", "person", "account"];
 
   function renderTree(node: TagTreeNode, depth = 0) {
     return (
@@ -77,15 +100,33 @@ export default async function LocalizedTagsPage({ params }: LocalizedTagsPagePro
         <CreateTagDialog existingTags={activeTags} />
       </div>
 
-      <div className="rounded-3xl border border-slate-800 bg-slate-900/60 p-6 shadow-xl space-y-4">
-        {tagTree.length === 0 ? (
-          <div className="py-12 text-center text-sm text-slate-500">
-            {t.tags.noTagsYet}
+      {/* Grouped by Tag Type */}
+      {tagTypes.map((type) => {
+        const typeTags = activeTags.filter((tg) => tg.tagType === type);
+        const tree = buildTagTree(typeTags);
+        const meta = TYPE_META[type];
+        const Icon = meta.icon;
+
+        return (
+          <div key={type} className="rounded-3xl border border-slate-800 bg-slate-900/60 p-6 shadow-xl space-y-4">
+            <div className="flex items-center gap-2 pb-2 border-b border-slate-800/60">
+              <Icon className={`h-5 w-5 ${meta.color}`} />
+              <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider">
+                {locale === "bn" ? meta.labelBn : meta.label}
+              </h3>
+              <span className="text-xs text-slate-500 ml-auto">{typeTags.length}</span>
+            </div>
+
+            {tree.length === 0 ? (
+              <div className="py-6 text-center text-sm text-slate-500">
+                {t.tags.noTagsYet}
+              </div>
+            ) : (
+              <div className="space-y-3">{tree.map((node) => renderTree(node, 0))}</div>
+            )}
           </div>
-        ) : (
-          <div className="space-y-3">{tagTree.map((node) => renderTree(node, 0))}</div>
-        )}
-      </div>
+        );
+      })}
 
       {archivedTags.length > 0 && (
         <div className="pt-6 border-t border-slate-800 space-y-3">
@@ -98,7 +139,12 @@ export default async function LocalizedTagsPage({ params }: LocalizedTagsPagePro
                 key={tag.id}
                 className="flex items-center justify-between p-3 rounded-xl border border-slate-800/60 bg-slate-950/40 text-xs text-slate-400"
               >
-                <span>{tag.name}</span>
+                <div className="flex items-center gap-2">
+                  <span>{tag.name}</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-500">
+                    {tag.tagType}
+                  </span>
+                </div>
                 <form action={restoreTagAction.bind(null, tag.id)}>
                   <button
                     type="submit"

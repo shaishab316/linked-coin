@@ -5,8 +5,10 @@ import { requireUser } from "../../../../../features/auth/service";
 import { getPersonById } from "../../../../../features/people/service";
 import { archivePersonAction, restorePersonAction } from "../../../../../features/people/actions";
 import { searchTransactions } from "../../../../../features/query-builder/service";
+import { listTags, getPersonTagIds } from "../../../../../features/tags/service";
 import { getDictionary, formatLocalizedAmount, type Locale } from "../../../../../lib/i18n";
 import { InteractiveTimelineView } from "../../../../../components/timeline/InteractiveTimelineView";
+import { PersonTagsSection } from "../../../../../features/tags/components/person-tags-section";
 import { ArrowLeft, Archive, RotateCcw, HandCoins, ArrowDownLeft, ArrowUpRight, Phone } from "lucide-react";
 
 interface PersonDetailPageProps {
@@ -29,11 +31,15 @@ export default async function LocalizedPersonDetailPage({ params }: PersonDetail
     notFound();
   }
 
-  const txResult = await searchTransactions(user.id, {
-    personIds: [person.id],
-    limit: 50,
-    offset: 0,
-  });
+  const [txResult, personTagIds, personTags] = await Promise.all([
+    searchTransactions(user.id, {
+      personIds: [person.id],
+      limit: 50,
+      offset: 0,
+    }),
+    getPersonTagIds(person.id),
+    listTags(user.id, false, "person"),
+  ]);
 
   const timelineItems = txResult.items.map((tx) => ({
     id: tx.id,
@@ -97,8 +103,8 @@ export default async function LocalizedPersonDetailPage({ params }: PersonDetail
       </div>
 
       {/* Person Header Card */}
-      <div className="rounded-3xl border border-slate-800 bg-slate-900/90 p-6 sm:p-8 shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div className="space-y-2">
+      <div className="rounded-3xl border border-slate-800 bg-slate-900/90 p-6 sm:p-8 shadow-2xl flex flex-col md:flex-row md:items-start justify-between gap-6">
+        <div className="space-y-3">
           <div className="flex items-center gap-3">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-800 border border-slate-700 text-slate-100 font-extrabold text-lg">
               {person.name.slice(0, 2).toUpperCase()}
@@ -118,6 +124,13 @@ export default async function LocalizedPersonDetailPage({ params }: PersonDetail
               &quot;{person.notes}&quot;
             </p>
           )}
+
+          {/* Person Tags */}
+          <PersonTagsSection
+            personId={person.id}
+            availableTags={personTags}
+            selectedTagIds={personTagIds}
+          />
         </div>
 
         {/* Outstanding Balance & Quick Actions */}

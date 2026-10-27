@@ -4,7 +4,10 @@ import { requireUser } from "../../../../features/auth/service";
 import { listAccounts } from "../../../../features/accounts/service";
 import { CreateAccountDialog } from "../../../../features/accounts/components/create-account-dialog";
 import { getDictionary, formatLocalizedAmount, type Locale } from "../../../../lib/i18n";
-import { Wallet, Building2, PiggyBank, Smartphone, CreditCard, Layers } from "lucide-react";
+import { Wallet, Building2, PiggyBank, Smartphone, CreditCard, Layers, Tag as TagIcon } from "lucide-react";
+import { db } from "../../../../db";
+import { accountTags, tags } from "../../../../db/schema";
+import { eq } from "drizzle-orm";
 
 interface LocalizedAccountsPageProps {
   params: Promise<{
@@ -18,7 +21,20 @@ export default async function LocalizedAccountsPage({ params }: LocalizedAccount
   const locale: Locale = rawLocale === "bn" ? "bn" : "en";
   const t = getDictionary(locale);
 
-  const accounts = await listAccounts(user.id, true);
+  const [accounts, allAccountTags] = await Promise.all([
+    listAccounts(user.id, true),
+    db
+      .select({ accountId: accountTags.accountId, tagName: tags.name })
+      .from(accountTags)
+      .innerJoin(tags, eq(accountTags.tagId, tags.id)),
+  ]);
+
+  const tagsByAccount = allAccountTags.reduce((acc, row) => {
+    if (!acc[row.accountId]) acc[row.accountId] = [];
+    acc[row.accountId].push(row.tagName);
+    return acc;
+  }, {} as Record<string, string[]>);
+
   const activeAccounts = accounts.filter((a) => !a.archivedAt);
   const archivedAccounts = accounts.filter((a) => a.archivedAt);
 
@@ -87,7 +103,21 @@ export default async function LocalizedAccountsPage({ params }: LocalizedAccount
                     {acc.name}
                   </h3>
                   {acc.description && (
-                    <p className="text-xs text-slate-400 line-clamp-2 mb-4">{acc.description}</p>
+                    <p className="text-xs text-slate-400 line-clamp-2 mb-2">{acc.description}</p>
+                  )}
+
+                  {tagsByAccount[acc.id]?.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-2 mb-3">
+                      {tagsByAccount[acc.id].map((tag) => (
+                        <span
+                          key={tag}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                        >
+                          <TagIcon className="h-2.5 w-2.5" />
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
                   )}
                 </div>
 
