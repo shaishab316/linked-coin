@@ -33,9 +33,20 @@ export async function createTestContext(): Promise<TestContext> {
   return {
     db,
     reset: async () => {
-      await db.execute(
-        sql`truncate table "sessions", "accounts", "users" restart identity cascade`,
-      );
+      await db.execute(sql`
+        truncate table
+          "transaction_tags",
+          "transaction_links",
+          "financial_events",
+          "ledger_entries",
+          "ledger_transactions",
+          "tags",
+          "people",
+          "sessions",
+          "accounts",
+          "users"
+        restart identity cascade
+      `);
     },
     close: async () => {
       await pool.end();

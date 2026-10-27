@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 
 import type { Database } from "@/db";
 import { accounts } from "@/db/schema";
@@ -86,16 +86,42 @@ export async function archiveAccountForUser(
   userId: string,
   accountId: string,
 ): Promise<boolean> {
+  return setAccountArchivedForUser(db, userId, accountId, true);
+}
+
+export async function setAccountArchivedForUser(
+  db: Database,
+  userId: string,
+  accountId: string,
+  archived: boolean,
+): Promise<boolean> {
   const rows = await db
     .update(accounts)
-    .set({ archivedAt: new Date(), updatedAt: new Date() })
-    .where(
-      and(
-        eq(accounts.id, accountId),
-        eq(accounts.userId, userId),
-        isNull(accounts.archivedAt),
-      ),
-    )
+    .set({
+      archivedAt: archived ? new Date() : null,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(accounts.id, accountId), eq(accounts.userId, userId)))
+    .returning({ id: accounts.id });
+
+  return rows.length > 0;
+}
+
+/** Type and currency stay immutable once the account is in the ledger. */
+export async function updateAccountMetadataForUser(
+  db: Database,
+  userId: string,
+  accountId: string,
+  input: { name: string; description: string | null },
+): Promise<boolean> {
+  const rows = await db
+    .update(accounts)
+    .set({
+      name: input.name,
+      description: input.description,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(accounts.id, accountId), eq(accounts.userId, userId)))
     .returning({ id: accounts.id });
 
   return rows.length > 0;

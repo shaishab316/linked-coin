@@ -4,10 +4,21 @@ Offline-first personal finance and financial history management.
 See [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) for the product,
 financial model, synchronization protocol, and roadmap.
 
-The project currently implements **Phase 1 (Foundation)** of that roadmap:
-Next.js + strict TypeScript, Tailwind, Drizzle/PostgreSQL, Zod-validated
-configuration and inputs, Argon2id username/password authentication with
-server-side sessions, and ownership-scoped accounts.
+Implemented so far:
+
+- Foundation: Next.js + strict TypeScript, Tailwind, Drizzle/PostgreSQL,
+  Zod-validated configuration and inputs, Argon2id authentication with
+  server-side sessions.
+- Double-entry ledger with income, expense, transfer, loan, repayment, opening
+  balance, and reversal commands; amounts stored in integer minor units.
+- Ownership-scoped accounts, people, and hierarchical tags, with
+  ledger-derived balances.
+- Transaction history, type filtering, pagination, transaction detail,
+  metadata-only editing, and linked reversals.
+- Dashboard with per-currency position, cash flow, and recent activity.
+
+See [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) for the
+precise implemented/partial/missing breakdown and known limitations.
 
 ## Requirements
 
@@ -36,7 +47,8 @@ pnpm db:migrate
 pnpm dev
 ```
 
-Open http://localhost:3000, create an account, and add a financial account.
+Open http://localhost:3000, create an account, add a financial account, then
+record income or an opening balance so the ledger has a starting position.
 
 ## Scripts
 
@@ -66,15 +78,21 @@ src/
 ├── db/                   # Drizzle client, schema, migrations
 ├── features/
 │   ├── auth/             # Validation, Argon2id hashing, sessions, actions
-│   └── accounts/         # Ownership-scoped account commands and queries
-└── lib/                  # Environment config, password/token helpers, errors
-tests/helpers/            # PostgreSQL test harness
+│   ├── accounts/         # Account commands, metadata, archive/restore
+│   ├── ledger/           # Commands, queries, validation, transaction UI
+│   ├── people/           # Contacts, receivables/payables, archive/restore
+│   └── tags/             # Hierarchical tags
+└── lib/                  # Env, money, dates, tokens, errors
 ```
 
 ## Conventions enforced so far
 
-- Money-moving features must enforce ownership server-side; every account
-  query takes the authenticated user id.
+- Money-moving features must enforce ownership server-side; every query takes
+  the authenticated user id, and database triggers reject cross-owner entries.
+- Money is `bigint` minor units with per-currency precision; no floating point.
+- Every transaction is double-entry balanced and written atomically with its
+  entries, tags, links, and immutable financial event.
+- Posted financial events are immutable; corrections append reversals.
 - Session tokens are stored only as SHA-256 hashes; browser cookies are
   `HttpOnly`, `SameSite=Lax`, and `Secure` in production.
 - Usernames are stored normalized (trimmed, lowercased) so uniqueness is

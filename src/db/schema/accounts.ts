@@ -1,4 +1,6 @@
+import { sql } from "drizzle-orm";
 import {
+  check,
   index,
   pgEnum,
   pgTable,
@@ -40,5 +42,9 @@ export const accounts = pgTable(
   (table) => [
     index("accounts_user_id_idx").on(table.userId),
     index("accounts_user_id_archived_at_idx").on(table.userId, table.archivedAt),
+    check(
+      "accounts_currency_format_check",
+      sql`${table.currency} ~ '^[A-Z]{3}$'`,
+    ),
   ],
 );

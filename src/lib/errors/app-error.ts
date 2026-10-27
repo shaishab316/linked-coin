@@ -14,6 +14,15 @@ export type AppErrorCode =
 
 export type FieldErrors = Record<string, string[]>;
 
+/** Shape returned to `useActionState` forms. */
+export type FormState =
+  | {
+      error?: string;
+      fieldErrors?: FieldErrors;
+      success?: string;
+    }
+  | undefined;
+
 export class AppError extends Error {
   readonly code: AppErrorCode;
   readonly fieldErrors: FieldErrors | undefined;

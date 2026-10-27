@@ -46,4 +46,18 @@ export const archiveAccountSchema = z.object({
   accountId: z.uuid("A valid account id is required"),
 });
 
+export const updateAccountSchema = z.object({
+  accountId: z.uuid("A valid account id is required"),
+  name: z
+    .string()
+    .trim()
+    .min(1, "Account name is required")
+    .max(80, "Account name must be at most 80 characters long"),
+  description: z
+    .string()
+    .trim()
+    .max(280, "Description must be at most 280 characters long")
+    .transform((value) => (value.length > 0 ? value : null)),
+});
+
 export type CreateAccountInput = z.infer<typeof createAccountSchema>;
