@@ -10,7 +10,8 @@ export type ErrorCode =
   | "INSUFFICIENT_FUNDS"
   | "EXCEEDS_OUTSTANDING_DEBT"
   | "IMMUTABLE_EVENT_MODIFIED"
-  | "INTERNAL_SERVER_ERROR";
+  | "INTERNAL_SERVER_ERROR"
+  | "BAD_REQUEST";
 
 export class AppError extends Error {
   public readonly code: ErrorCode;
@@ -33,6 +34,10 @@ export class AppError extends Error {
 
   static unauthorized(message = "Authentication required"): AppError {
     return new AppError(message, "UNAUTHORIZED", 401);
+  }
+
+  static badRequest(message = "Bad request"): AppError {
+    return new AppError(message, "BAD_REQUEST", 400);
   }
 
   static forbidden(message = "Access denied"): AppError {
