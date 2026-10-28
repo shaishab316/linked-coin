@@ -5,6 +5,7 @@ import { useI18n } from "../../lib/i18n/context";
 import { formatLocalizedAmount } from "../../lib/i18n";
 import { CheckSquare, Layers, Download, X, Tag as TagIcon, FileText } from "lucide-react";
 import { TagPicker, type TagPickerItem } from "../../features/tags/components/tag-picker";
+import dayjs from "../../lib/date/dayjs";
 
 export interface SelectedTransactionInfo {
   id: string;
@@ -77,7 +78,7 @@ export function RangeMergeToolbar({
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `selected_transactions_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute("download", `selected_transactions_${dayjs().format("YYYY-MM-DD")}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

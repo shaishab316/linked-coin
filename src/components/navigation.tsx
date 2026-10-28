@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOutAction } from "../features/auth/actions";
@@ -15,6 +15,20 @@ export function Navigation({ username }: NavigationProps) {
   const pathname = usePathname();
   const { locale, t, setLocale } = useI18n();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (username && typeof window !== "undefined") {
+      try {
+        localStorage.setItem("linked_coin_username", username);
+      } catch {}
+    }
+  }, [username]);
+
+  const displayUsername =
+    username ||
+    (typeof window !== "undefined"
+      ? localStorage.getItem("linked_coin_username") || "User"
+      : "User");
 
   const navItems = [
     { label: t.nav.dashboard, href: `/${locale}/dashboard`, rawHref: "/dashboard", icon: "📊" },
@@ -179,10 +193,10 @@ export function Navigation({ username }: NavigationProps) {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5 overflow-hidden">
               <div className="w-8 h-8 rounded-full bg-slate-800 border border-white/10 flex items-center justify-center text-xs font-bold text-emerald-400 uppercase">
-                {username.slice(0, 2)}
+                {displayUsername.slice(0, 2)}
               </div>
               <div className="truncate">
-                <div className="text-sm font-semibold text-white truncate">{username}</div>
+                <div className="text-sm font-semibold text-white truncate">{displayUsername}</div>
                 <div className="text-[10px] text-slate-500">Connected</div>
               </div>
             </div>

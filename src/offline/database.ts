@@ -62,6 +62,14 @@ export interface LocalTransaction {
   currency: string;
   amountMinor: string;
   personId?: string | null;
+  parentTransactionId?: string | null;
+  addons?: Array<{
+    id: string;
+    description: string;
+    amountMinor: string;
+    currency: string;
+    type: string;
+  }>;
   reversesTransactionId?: string | null;
   reversedByTransactionId?: string | null;
   reversedAt?: string | null;
@@ -112,6 +120,10 @@ export class LinkedCoinDatabase extends Dexie {
       transactions: "id, userId, type, occurredAt, currency, personId, idempotencyKey, syncStatus",
       outbox: "id, operationType, idempotencyKey, status, createdAt",
       syncMetadata: "key",
+    });
+
+    this.version(2).stores({
+      transactions: "id, userId, type, occurredAt, currency, personId, parentTransactionId, idempotencyKey, syncStatus",
     });
   }
 }

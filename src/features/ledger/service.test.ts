@@ -213,4 +213,40 @@ describe("Double-entry Ledger Service Integration", () => {
       }),
     ).rejects.toThrow(/exceeds outstanding balance/i);
   });
+
+  it("records a main transaction with add-on transactions and creates balanced links", async () => {
+    const mainTx = await createTransaction(testUserId, {
+      type: "expense",
+      amount: "1500.00",
+      currency: "BDT",
+      description: "Flight Ticket",
+      sourceAccountId: bankAccountId,
+      occurredAt: new Date().toISOString(),
+      idempotencyKey: `main_tx_with_addons_${Date.now()}`,
+      addons: [
+        {
+          description: "Extra Luggage",
+          amount: "300.00",
+          type: "expense",
+        },
+        {
+          description: "Travel Insurance",
+          amount: "150.00",
+          type: "expense",
+        },
+      ],
+    });
+
+    expect(mainTx.id).toBeDefined();
+    expect(mainTx.amountMinor).toBe(150000n);
+    expect(mainTx.addons).toHaveLength(2);
+
+    const luggageAddon = mainTx.addons?.find((a) => a.description === "Extra Luggage");
+    const insuranceAddon = mainTx.addons?.find((a) => a.description === "Travel Insurance");
+
+    expect(luggageAddon).toBeDefined();
+    expect(luggageAddon?.amountMinor).toBe(30000n);
+    expect(insuranceAddon).toBeDefined();
+    expect(insuranceAddon?.amountMinor).toBe(15000n);
+  });
 });

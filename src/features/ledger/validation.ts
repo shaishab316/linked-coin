@@ -2,6 +2,18 @@ import { z } from "zod";
 import { TRANSACTION_TYPES } from "../../db/schema/ledger";
 import { SUPPORTED_CURRENCIES } from "../../lib/money/money";
 
+export const addonTransactionSchema = z.object({
+  description: z.string().min(1, "Addon description is required").max(255),
+  amount: z.string().min(1, "Addon amount is required"),
+  type: z.enum(TRANSACTION_TYPES).optional().default("expense"),
+  sourceAccountId: z.string().uuid().optional().nullable(),
+  destinationAccountId: z.string().uuid().optional().nullable(),
+  tagIds: z.array(z.string().uuid()).optional().default([]),
+  notes: z.string().max(1000).optional().nullable(),
+});
+
+export type AddonTransactionInput = z.infer<typeof addonTransactionSchema>;
+
 export const createTransactionSchema = z
   .object({
     type: z.enum(TRANSACTION_TYPES),
@@ -26,6 +38,9 @@ export const createTransactionSchema = z
 
     // Tags
     tagIds: z.array(z.string().uuid()).optional().default([]),
+
+    // Addons
+    addons: z.array(addonTransactionSchema).optional().default([]),
   })
   .superRefine((data, ctx) => {
     if (data.type === "expense") {

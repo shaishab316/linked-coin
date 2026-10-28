@@ -20,6 +20,17 @@ export async function createTransactionAction(formData: FormData) {
   const linkedTransactionId = (formData.get("linkedTransactionId") as string) || null;
   const tagIdsRaw = formData.getAll("tagIds") as string[];
 
+  // Support addon transactions
+  const addonsRaw = formData.get("addons") as string;
+  let addons: any[] = [];
+  if (addonsRaw) {
+    try {
+      addons = JSON.parse(addonsRaw);
+    } catch {
+      addons = [];
+    }
+  }
+
   try {
     const input = createTransactionSchema.parse({
       type,
@@ -33,6 +44,7 @@ export async function createTransactionAction(formData: FormData) {
       personId,
       linkedTransactionId,
       tagIds: tagIdsRaw.filter(Boolean),
+      addons,
     });
 
     const tx = await createTransaction(user.id, input);

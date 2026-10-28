@@ -2,7 +2,7 @@ import { pgTable, text, timestamp, uuid, index, uniqueIndex } from "drizzle-orm/
 import { users } from "./users";
 import { ledgerTransactions } from "./ledger";
 
-export const LINK_TYPES = ["repayment", "reversal", "correction"] as const;
+export const LINK_TYPES = ["repayment", "reversal", "correction", "addon"] as const;
 export type LinkType = (typeof LINK_TYPES)[number];
 
 export const transactionLinks = pgTable(

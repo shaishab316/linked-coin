@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { saveQueryAction, deleteQueryAction } from "../../features/query-builder/actions";
 import { toast } from "sonner";
+import dayjs from "../../lib/date/dayjs";
 
 export interface OdooSavedQuery {
   id: string;
@@ -107,7 +108,7 @@ export function QueryAutocompleteBar({
         chips.push({
           id: token,
           token,
-          label: dateVal === new Date().toISOString().slice(0, 10) ? "Today" : dateVal,
+          label: dateVal === dayjs().format("YYYY-MM-DD") ? "Today" : dateVal,
           category: "date",
           color: "bg-amber-500/15 text-amber-300 border-amber-500/30",
           icon: Calendar,
@@ -506,7 +507,7 @@ export function QueryAutocompleteBar({
                   Time Period
                 </span>
                 {[
-                  { label: "Today", token: `date:${new Date().toISOString().slice(0, 10)}` },
+                  { label: "Today", token: `date:${dayjs().format("YYYY-MM-DD")}` },
                   { label: "This Month (Oct 2026)", token: "date:2026-10-01..2026-10-31" },
                   { label: "Last Month (Sep 2026)", token: "date:2026-09-01..2026-09-30" },
                 ].map((item) => {

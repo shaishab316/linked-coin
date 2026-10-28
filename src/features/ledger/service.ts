@@ -25,6 +25,7 @@ import {
 export interface TransactionDetail extends LedgerTransaction {
   entries: LedgerEntry[];
   tags: Tag[];
+  addons?: Array<LedgerTransaction>;
   linkedTransactions?: Array<{
     id: string;
     description: string;
@@ -349,6 +350,143 @@ export async function createTransaction(
       });
     }
 
+    // 4.1 Process addon transactions if any
+    const createdAddons: LedgerTransaction[] = [];
+    if (parsed.addons && parsed.addons.length > 0) {
+      let addonIndex = 0;
+      for (const addon of parsed.addons) {
+        addonIndex++;
+        const addonAmountMinor = decimalStringToMinor(addon.amount, parsed.currency);
+        if (addonAmountMinor <= 0n) continue;
+
+        const addonType = addon.type || "expense";
+        const addonSourceAccountId = addon.sourceAccountId || parsed.sourceAccountId || null;
+        const addonDestinationAccountId = addon.destinationAccountId || parsed.destinationAccountId || null;
+
+        const addonLegs: Array<{
+          accountId?: string | null;
+          personId?: string | null;
+          externalKind?: "income" | "expense" | "equity" | null;
+          direction: "debit" | "credit";
+          amountMinor: bigint;
+          currency: string;
+        }> = [];
+
+        if (addonType === "expense") {
+          if (addonSourceAccountId) {
+            addonLegs.push({
+              accountId: addonSourceAccountId,
+              direction: "credit",
+              amountMinor: addonAmountMinor,
+              currency: parsed.currency,
+            });
+          }
+          addonLegs.push({
+            externalKind: "expense",
+            direction: "debit",
+            amountMinor: addonAmountMinor,
+            currency: parsed.currency,
+          });
+        } else if (addonType === "income") {
+          if (addonDestinationAccountId) {
+            addonLegs.push({
+              accountId: addonDestinationAccountId,
+              direction: "debit",
+              amountMinor: addonAmountMinor,
+              currency: parsed.currency,
+            });
+          }
+          addonLegs.push({
+            externalKind: "income",
+            direction: "credit",
+            amountMinor: addonAmountMinor,
+            currency: parsed.currency,
+          });
+        }
+
+        validateDoubleEntryBalance(
+          addonLegs.map((e) => ({
+            direction: e.direction === "debit" ? "DEBIT" : "CREDIT",
+            amountMinor: e.amountMinor,
+            currency: e.currency,
+          })),
+        );
+
+        const [addonTx] = await tx
+          .insert(ledgerTransactions)
+          .values({
+            userId,
+            type: addonType,
+            occurredAt,
+            description: addon.description,
+            notes: addon.notes || `Add-on to: ${parsed.description}`,
+            currency: parsed.currency,
+            amountMinor: addonAmountMinor,
+            personId: parsed.personId || null,
+            idempotencyKey: `${parsed.idempotencyKey}_addon_${addonIndex}_${crypto.randomUUID()}`,
+          })
+          .returning();
+
+        await tx.insert(ledgerEntries).values(
+          addonLegs.map((e) => ({
+            transactionId: addonTx.id,
+            userId,
+            accountId: e.accountId || null,
+            personId: e.personId || null,
+            externalKind: e.externalKind || null,
+            direction: e.direction,
+            amountMinor: e.amountMinor,
+            currency: e.currency,
+          })),
+        );
+
+        if (addon.tagIds && addon.tagIds.length > 0) {
+          const addonUserTags = await tx
+            .select({ id: tags.id })
+            .from(tags)
+            .where(and(eq(tags.userId, userId), inArray(tags.id, addon.tagIds)));
+
+          if (addonUserTags.length > 0) {
+            await tx.insert(transactionTags).values(
+              addonUserTags.map((t) => ({
+                transactionId: addonTx.id,
+                tagId: t.id,
+              })),
+            );
+          }
+        }
+
+        // Link addon to parent transaction
+        await tx.insert(transactionLinks).values({
+          userId,
+          fromTransactionId: addonTx.id,
+          toTransactionId: createdTx.id,
+          linkType: "addon",
+        });
+
+        // Financial event for addon
+        await tx.insert(financialEvents).values({
+          userId,
+          transactionId: addonTx.id,
+          eventType: "TRANSACTION_CREATED",
+          payload: {
+            transactionId: addonTx.id,
+            parentTransactionId: createdTx.id,
+            type: addonType,
+            amountMinor: addonAmountMinor.toString(),
+            currency: parsed.currency,
+            description: addon.description,
+            occurredAt: occurredAt.toISOString(),
+            isAddon: true,
+          },
+          occurredAt,
+          idempotencyKey: addonTx.idempotencyKey,
+        });
+
+        createdAddons.push(addonTx);
+      }
+    }
+
     // 5. Append immutable financial event
     await tx.insert(financialEvents).values({
       userId,
@@ -375,6 +513,7 @@ export async function createTransaction(
       ...createdTx,
       entries: insertedEntries,
       tags: assignedTags,
+      addons: createdAddons,
     };
   });
 }

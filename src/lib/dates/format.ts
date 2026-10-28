@@ -3,10 +3,12 @@
  * All financial occurrence timestamps are stored in UTC.
  */
 
+import dayjs from "../date/dayjs";
+
 export function formatDate(dateInput: string | Date): string {
   const date = typeof dateInput === "string" ? new Date(dateInput) : dateInput;
   if (isNaN(date.getTime())) return "Invalid date";
-  return date.toISOString().split("T")[0];
+  return dayjs(date).format("YYYY-MM-DD");
 }
 
 export function formatDateTime(dateInput: string | Date): string {

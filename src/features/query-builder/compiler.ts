@@ -1,9 +1,10 @@
-import { eq, and, gte, lte, inArray, ilike, sql, desc, asc, isNull, isNotNull, type SQL } from "drizzle-orm";
+import { eq, and, gte, lte, inArray, ilike, sql, desc, asc, isNull, isNotNull, or, type SQL } from "drizzle-orm";
 import { db } from "../../db";
 import {
   ledgerTransactions,
   ledgerEntries,
   transactionTags,
+  transactionLinks,
   tags,
   type LedgerTransaction,
   type Tag,
@@ -15,6 +16,15 @@ import type { ValidatedQueryAst } from "./validation";
 export interface QueryResultItem extends LedgerTransaction {
   entries: LedgerEntry[];
   tags: Tag[];
+  parentTransactionId?: string | null;
+  addonTransactions?: Array<{
+    id: string;
+    description: string;
+    amountMinor: bigint;
+    currency: string;
+    type: string;
+    occurredAt: Date;
+  }>;
 }
 
 export interface PaginatedQueryResult {
@@ -166,11 +176,89 @@ export async function executeTransactionQuery(
     tagsByTx.set(row.transactionId, list);
   }
 
-  const items: QueryResultItem[] = rows.map((r) => ({
-    ...r,
-    entries: entriesByTx.get(r.id) || [],
-    tags: tagsByTx.get(r.id) || [],
-  }));
+  // Batch load addon links safely (casting linkType to text to support both enum and text schemas)
+  let addonLinks: Array<{ addonId: string; parentId: string }> = [];
+  try {
+    addonLinks = await db
+      .select({
+        addonId: transactionLinks.fromTransactionId,
+        parentId: transactionLinks.toTransactionId,
+      })
+      .from(transactionLinks)
+      .where(
+        and(
+          eq(transactionLinks.userId, userId),
+          sql`${transactionLinks.linkType}::text = 'addon'`,
+          or(
+            inArray(transactionLinks.fromTransactionId, txIds),
+            inArray(transactionLinks.toTransactionId, txIds),
+          ),
+        ),
+      );
+  } catch (linkErr) {
+    console.warn("Could not query addon links (schema may be updating):", linkErr);
+    addonLinks = [];
+  }
+
+  const parentByAddonId = new Map<string, string>();
+  const addonIdsByParentId = new Map<string, string[]>();
+  const externalAddonIdsToFetch: string[] = [];
+
+  for (const link of addonLinks) {
+    parentByAddonId.set(link.addonId, link.parentId);
+    const list = addonIdsByParentId.get(link.parentId) || [];
+    list.push(link.addonId);
+    addonIdsByParentId.set(link.parentId, list);
+
+    if (!txIds.includes(link.addonId)) {
+      externalAddonIdsToFetch.push(link.addonId);
+    }
+  }
+
+  const externalAddonRows =
+    externalAddonIdsToFetch.length > 0
+      ? await db
+          .select()
+          .from(ledgerTransactions)
+          .where(
+            and(
+              eq(ledgerTransactions.userId, userId),
+              inArray(ledgerTransactions.id, externalAddonIdsToFetch),
+            ),
+          )
+      : [];
+
+  const allTxById = new Map<string, LedgerTransaction>();
+  for (const r of rows) {
+    allTxById.set(r.id, r);
+  }
+  for (const ext of externalAddonRows) {
+    allTxById.set(ext.id, ext);
+  }
+
+  const items: QueryResultItem[] = rows.map((r) => {
+    const parentId = parentByAddonId.get(r.id) || null;
+    const addonIds = addonIdsByParentId.get(r.id) || [];
+    const addonTransactions = addonIds
+      .map((aid) => allTxById.get(aid))
+      .filter(Boolean)
+      .map((atx) => ({
+        id: atx!.id,
+        description: atx!.description,
+        amountMinor: atx!.amountMinor,
+        currency: atx!.currency,
+        type: atx!.type,
+        occurredAt: atx!.occurredAt,
+      }));
+
+    return {
+      ...r,
+      entries: entriesByTx.get(r.id) || [],
+      tags: tagsByTx.get(r.id) || [],
+      parentTransactionId: parentId,
+      addonTransactions,
+    };
+  });
 
   const hasMore = offset + items.length < totalCount;
   const nextOffset = offset + items.length;

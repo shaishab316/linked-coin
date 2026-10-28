@@ -10,6 +10,7 @@ export function middleware(request: NextRequest) {
     pathname.startsWith("/api") ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/static") ||
+    pathname === "/offline" ||
     pathname.includes(".") || // e.g. icon.svg, sw.js, manifest.json
     pathname === "/favicon.ico"
   ) {
