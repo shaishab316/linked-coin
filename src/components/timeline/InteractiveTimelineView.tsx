@@ -27,6 +27,12 @@ import {
 } from "lucide-react";
 import { RangeMergeToolbar } from "../batch/RangeMergeToolbar";
 import dayjs, { formatFromNow, formatDate } from "../../lib/date/dayjs";
+import {
+  getZonedDateParts,
+  formatZonedHourLabel,
+  DEFAULT_APP_TIMEZONE,
+  isValidTimezone,
+} from "../../lib/date/timezone";
 import { localDb } from "../../offline/database";
 
 export interface TimelineAddonItem {
@@ -73,6 +79,7 @@ interface InteractiveTimelineViewProps {
   allTags?: Array<{ id: string; name: string; parentId?: string | null; tagType?: string | null; [key: string]: any }>;
   currency?: string;
   basePath?: string;
+  userTimezone?: string;
 }
 
 export function InteractiveTimelineView({
@@ -80,6 +87,7 @@ export function InteractiveTimelineView({
   allTags = [],
   currency = "BDT",
   basePath = "/transactions",
+  userTimezone = DEFAULT_APP_TIMEZONE,
 }: InteractiveTimelineViewProps) {
   const { locale, t } = useI18n();
   const [filterType, setFilterType] = useState<"all" | "inflow" | "outflow" | "transfer" | "debt">("all");
@@ -185,8 +193,9 @@ export function InteractiveTimelineView({
     });
 
     const parentIdsInList = new Set(filteredTx.map((t) => t.id));
+    const validTz = isValidTimezone(userTimezone) ? userTimezone : DEFAULT_APP_TIMEZONE;
 
-    // Group by local timezone date string (YYYY-MM-DD)
+    // Group by master timezone date string (YYYY-MM-DD)
     const groups: Record<string, TimelineTransactionItem[]> = {};
     for (const tx of filteredTx) {
       // If this transaction is an addon whose parent is in the list,
@@ -195,7 +204,7 @@ export function InteractiveTimelineView({
         continue;
       }
 
-      const dateKey = dayjs(tx.occurredAt).format("YYYY-MM-DD");
+      const dateKey = getZonedDateParts(tx.occurredAt, validTz).dateKey;
       if (!groups[dateKey]) {
         groups[dateKey] = [];
       }
@@ -244,16 +253,26 @@ export function InteractiveTimelineView({
     });
   };
 
-  // Local date formatting relative to user's local timezone
+  // Master timezone date formatting relative to user's configured timezone
   const getRelativeDateLabel = (dateStr: string) => {
-    const today = dayjs().format("YYYY-MM-DD");
-    const yesterday = dayjs().subtract(1, "day").format("YYYY-MM-DD");
+    const validTz = isValidTimezone(userTimezone) ? userTimezone : DEFAULT_APP_TIMEZONE;
+    const today = getZonedDateParts(new Date(), validTz).dateKey;
+    const yesterday = getZonedDateParts(new Date(Date.now() - 24 * 60 * 60 * 1000), validTz).dateKey;
     const fromNowText = formatFromNow(dateStr, locale);
 
     if (dateStr === today) return `${t.timeline.today} (${fromNowText})`;
     if (dateStr === yesterday) return `${t.timeline.yesterday} (${fromNowText})`;
 
-    return `${formatDate(dateStr, "D MMMM, YYYY", locale)} · ${fromNowText}`;
+    const [y, m, d] = dateStr.split("-").map(Number);
+    const dateObj = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+    const formatted = new Intl.DateTimeFormat(locale === "bn" ? "bn-BD" : "en-US", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      timeZone: validTz,
+    }).format(dateObj);
+
+    return `${formatted} · ${fromNowText}`;
   };
 
   const getTypeVisual = (type: string) => {
@@ -471,10 +490,10 @@ export function InteractiveTimelineView({
                   );
                   const bundleTotalMinor = tx.amountMinor + addonsTotalMinor;
 
-                  // Format dates strictly in user's browser local timezone
-                  const timeStr = dayjs(tx.occurredAt)
-                    .locale(locale === "bn" ? "bn" : "en")
-                    .format("h:mm A");
+                  // Format times strictly in user's master application timezone
+                  const validTz = isValidTimezone(userTimezone) ? userTimezone : DEFAULT_APP_TIMEZONE;
+                  const txParts = getZonedDateParts(tx.occurredAt, validTz);
+                  const timeStr = `${formatZonedHourLabel(txParts.hour)}:${txParts.minuteStr}`;
                   const fromNowStr = formatFromNow(tx.occurredAt, locale);
 
                   return (

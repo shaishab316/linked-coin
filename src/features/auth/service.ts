@@ -8,6 +8,7 @@ import { signUpSchema, signInSchema, type SignUpInput, type SignInInput } from "
 import { DEFAULT_CURRENCY } from "../../lib/money/money";
 
 export async function signUp(input: SignUpInput, userAgent?: string) {
+  await ensureUserColumns();
   const parsed = signUpSchema.parse(input);
 
   const existing = await db
@@ -70,8 +71,10 @@ export async function signOut() {
 }
 
 import { redirect } from "next/navigation";
+import { ensureUserColumns } from "../users/service";
 
 export async function requireUser() {
+  await ensureUserColumns();
   const user = await getSessionUser();
   if (!user) {
     redirect("/sign-in");

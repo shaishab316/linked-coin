@@ -35,9 +35,9 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
   const locale: Locale = rawLocale === "bn" ? "bn" : "en";
   const t = getDictionary(locale);
 
-  // Fetch all live financial data in parallel
+  // Fetch all live financial data in parallel using user's configured timezone
   const [insights, txResult, accounts, people, allTags] = await Promise.all([
-    getDashboardInsights(user.id, "BDT"),
+    getDashboardInsights(user.id, "BDT", user.timezone),
     searchTransactions(user.id, { limit: 30, offset: 0 }),
     listAccounts(user.id),
     listPeople(user.id),
@@ -229,6 +229,7 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
         {/* Chart 1: Cash Flow In vs Out (2 Cols) */}
         <div className="lg:col-span-2 rounded-3xl border border-slate-800 bg-slate-900/70 p-6 shadow-xl space-y-2">
           <CashFlowChart
+            userTimezone={user.timezone}
             rawTransactions={insights.rawHourlyTransactions}
             granularData={{
               hour: {
@@ -431,6 +432,7 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
           allTags={allTags}
           currency={defaultCurr}
           basePath={`/${locale}/transactions`}
+          userTimezone={user.timezone}
         />
       </div>
     </div>

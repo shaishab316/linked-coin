@@ -145,7 +145,12 @@ export default async function LocalizedPeoplePage({ params }: LocalizedPeoplePag
                         : "text-rose-400"
                     }`}
                   >
-                    {formatLocalizedAmount(person.outstandingMinor, defaultCurr, locale, true)}
+                    {formatLocalizedAmount(
+                      person.outstandingMinor < 0n ? -person.outstandingMinor : person.outstandingMinor,
+                      defaultCurr,
+                      locale,
+                      false,
+                    )}
                   </span>
                 </div>
               </Link>
@@ -169,7 +174,12 @@ export default async function LocalizedPeoplePage({ params }: LocalizedPeoplePag
               >
                 <span className="font-semibold text-sm">{person.name}</span>
                 <span className="font-mono text-xs">
-                  {formatLocalizedAmount(person.outstandingMinor, defaultCurr, locale, true)}
+                  {formatLocalizedAmount(
+                    person.outstandingMinor < 0n ? -person.outstandingMinor : person.outstandingMinor,
+                    defaultCurr,
+                    locale,
+                    false,
+                  )}
                 </span>
               </Link>
             ))}

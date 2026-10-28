@@ -107,6 +107,7 @@ export default async function TransactionsPage({ params }: TransactionsPageProps
           allTags={allTags}
           currency="BDT"
           basePath={`/${locale}/transactions`}
+          userTimezone={user.timezone}
         />
       </div>
     </div>

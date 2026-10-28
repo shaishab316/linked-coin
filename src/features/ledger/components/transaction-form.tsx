@@ -12,6 +12,11 @@ import { useI18n } from '../../../lib/i18n/context';
 import { CascadingTagSelector } from '../../tags/components/cascading-tag-selector';
 import type { Account, Person, Tag } from '../../../db/schema';
 import dayjs from '../../../lib/date/dayjs';
+import {
+  getZonedDateTimeLocalString,
+  zonedLocalToUtc,
+  DEFAULT_APP_TIMEZONE,
+} from '../../../lib/date/timezone';
 import { localDb } from '../../../offline/database';
 import { enqueueOutboxOperation } from '../../../offline/outbox';
 import { toast } from 'sonner';
@@ -36,6 +41,7 @@ interface TransactionFormProps {
   editTransaction?: any;
   addonsForId?: string;
   parentTransaction?: any;
+  userTimezone?: string;
 }
 
 interface FormAddon {
@@ -66,6 +72,7 @@ export function TransactionForm({
   editTransaction = null,
   addonsForId,
   parentTransaction = null,
+  userTimezone = DEFAULT_APP_TIMEZONE,
 }: TransactionFormProps) {
   const router = useRouter();
   const { locale, t } = useI18n();
@@ -127,11 +134,11 @@ export function TransactionForm({
   );
   const [notes, setNotes] = useState<string>(editTransaction?.notes || '');
 
-  // Local timezone datetime initialized in user's browser local time
+  // Local timezone datetime initialized in user's master application timezone
   const [occurredAt, setOccurredAt] = useState<string>(() =>
     editTransaction?.occurredAt
-      ? dayjs(editTransaction.occurredAt).format('YYYY-MM-DDTHH:mm')
-      : dayjs().format('YYYY-MM-DDTHH:mm'),
+      ? getZonedDateTimeLocalString(editTransaction.occurredAt, userTimezone)
+      : getZonedDateTimeLocalString(new Date(), userTimezone),
   );
 
   // Addon transactions state (for inline addons when creating a new transaction)
@@ -368,7 +375,7 @@ export function TransactionForm({
     const formData = new FormData(e.currentTarget);
     formData.set('type', type);
 
-    const localDate = new Date(occurredAt);
+    const localDate = zonedLocalToUtc(occurredAt, userTimezone);
     const occurredAtIso = !isNaN(localDate.getTime())
       ? localDate.toISOString()
       : new Date().toISOString();
@@ -474,7 +481,7 @@ export function TransactionForm({
     setChallengeError(null);
     setIsSavingEdit(true);
 
-    const localDate = new Date(occurredAt);
+    const localDate = zonedLocalToUtc(occurredAt, userTimezone);
     const occurredAtIso = !isNaN(localDate.getTime())
       ? localDate.toISOString()
       : new Date().toISOString();
@@ -745,10 +752,10 @@ export function TransactionForm({
         <div>
           <div className="flex items-center justify-between mb-1.5">
             <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
-              Date & Time (Local Time)
+              Date & Time ({userTimezone.split("/")[1] || userTimezone})
             </label>
             <span className="text-[11px] text-emerald-400 font-mono">
-              Local Zone: {Intl.DateTimeFormat().resolvedOptions().timeZone}
+              App Zone: {userTimezone}
             </span>
           </div>
           <input

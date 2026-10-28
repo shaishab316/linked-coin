@@ -5,11 +5,31 @@ const envSchema = z.object({
   SESSION_SECRET: z.string().min(32, "SESSION_SECRET must be at least 32 characters"),
   APP_URL: z.string().url().default("http://localhost:3000"),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  ENABLE_SIGNUP: z.preprocess((val) => {
+    if (typeof val === "boolean") return val;
+    if (typeof val === "string") {
+      const lower = val.trim().toLowerCase();
+      return lower === "true" || lower === "1" || lower === "yes";
+    }
+    return true;
+  }, z.boolean()).default(true),
 });
 
 export type Env = z.infer<typeof envSchema>;
 
 let parsedEnv: Env | null = null;
+
+export function isSignUpEnabled(): boolean {
+  if (process.env.ENABLE_SIGNUP !== undefined) {
+    const val = process.env.ENABLE_SIGNUP.trim().toLowerCase();
+    return val === "true" || val === "1" || val === "yes";
+  }
+  if (process.env.DISABLE_SIGNUP !== undefined) {
+    const val = process.env.DISABLE_SIGNUP.trim().toLowerCase();
+    return !(val === "true" || val === "1" || val === "yes");
+  }
+  return true;
+}
 
 export function getEnv(): Env {
   if (parsedEnv) {

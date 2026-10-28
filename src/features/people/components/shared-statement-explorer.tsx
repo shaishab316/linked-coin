@@ -31,6 +31,7 @@ interface SharedStatementExplorerProps {
   };
   owner: {
     username: string;
+    name?: string | null;
   };
   link: {
     token: string;
@@ -151,8 +152,13 @@ export function SharedStatementExplorer({
     return { totalLoanGiven, totalRepayments };
   }, [transactions]);
 
+  const ownerDisplayName =
+    owner.name?.trim() ? owner.name.trim() : owner.username ? `@${owner.username}` : "Owner";
+
   const hasDebt = person.outstandingMinor !== 0n;
   const owesOwner = person.outstandingMinor > 0n;
+  const absOutstandingMinor =
+    person.outstandingMinor < 0n ? -person.outstandingMinor : person.outstandingMinor;
 
   return (
     <div className="min-h-screen bg-[#070b13] text-slate-100 py-8 px-4 sm:px-6 lg:px-8 selection:bg-cyan-500/30 print:bg-white print:text-black print:p-0 print:m-0 print:min-h-0">
@@ -186,7 +192,7 @@ export function SharedStatementExplorer({
         <div className="hidden print:block pt-2 pb-4 mb-4 border-b border-black">
           <h1 className="text-2xl font-bold text-black tracking-tight">{person.name}</h1>
           <p className="text-xs text-gray-700 mt-0.5 font-medium">
-            Ledger shared by @{owner.username}
+            Ledger shared by {ownerDisplayName}
           </p>
         </div>
 
@@ -234,7 +240,7 @@ export function SharedStatementExplorer({
                 </div>
                 <p className="text-xs text-slate-400 mt-1 flex items-center gap-1.5">
                   <User className="h-3.5 w-3.5 text-cyan-400" />
-                  <span>Ledger shared by <strong className="text-slate-300 font-semibold">@{owner.username}</strong></span>
+                  <span>Ledger shared by <strong className="text-slate-300 font-semibold">{ownerDisplayName}</strong></span>
                 </p>
                 {link.label && (
                   <p className="text-[11px] text-cyan-400/90 font-medium mt-0.5">
@@ -250,15 +256,15 @@ export function SharedStatementExplorer({
                 {!hasDebt
                   ? "Net Balance"
                   : owesOwner
-                  ? `${person.name} Owes @${owner.username}`
-                  : `@${owner.username} Owes ${person.name}`}
+                  ? `${person.name} Owes ${ownerDisplayName}`
+                  : `${ownerDisplayName} Owes ${person.name}`}
               </span>
               <span
                 className={`text-2xl sm:text-3xl font-black tracking-tight ${
                   !hasDebt ? "text-slate-400" : owesOwner ? "text-emerald-400" : "text-rose-400"
                 }`}
               >
-                {formatLocalizedAmount(person.outstandingMinor, currency, locale as "en", true)}
+                {formatLocalizedAmount(absOutstandingMinor, currency, locale as "en", false)}
               </span>
             </div>
           </div>

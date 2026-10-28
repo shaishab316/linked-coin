@@ -90,6 +90,7 @@ export default async function LocalizedNewTransactionPage({
         editTransaction={editTransaction}
         addonsForId={queryParams.addonsForId}
         parentTransaction={parentTransaction}
+        userTimezone={user.timezone}
       />
     </div>
   );

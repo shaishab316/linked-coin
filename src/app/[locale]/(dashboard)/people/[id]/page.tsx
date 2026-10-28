@@ -77,6 +77,8 @@ export default async function LocalizedPersonDetailPage({ params }: PersonDetail
   const defaultCurr = "BDT";
   const hasDebt = person.outstandingMinor !== 0n;
   const owesYou = person.outstandingMinor > 0n;
+  const absOutstanding =
+    person.outstandingMinor < 0n ? -person.outstandingMinor : person.outstandingMinor;
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto animate-in fade-in duration-300">
@@ -159,7 +161,7 @@ export default async function LocalizedPersonDetailPage({ params }: PersonDetail
                 !hasDebt ? "text-slate-400" : owesYou ? "text-emerald-400" : "text-rose-400"
               }`}
             >
-              {formatLocalizedAmount(person.outstandingMinor, defaultCurr, locale, true)}
+              {formatLocalizedAmount(absOutstanding, defaultCurr, locale, false)}
             </span>
           </div>
 

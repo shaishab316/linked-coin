@@ -9,9 +9,11 @@ import { Globe, Menu, X, PlusCircle } from "lucide-react";
 
 interface NavigationProps {
   username: string;
+  name?: string | null;
+  timezone?: string;
 }
 
-export function Navigation({ username }: NavigationProps) {
+export function Navigation({ username, name, timezone = "Asia/Dhaka" }: NavigationProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { locale, t, setLocale } = useI18n();
@@ -58,6 +60,7 @@ export function Navigation({ username }: NavigationProps) {
     { label: t.nav.tags, href: `/${locale}/tags`, rawHref: "/tags", icon: "🏷️" },
     { label: t.nav.query, href: `/${locale}/query`, rawHref: "/query", icon: "🔍" },
     { label: t.nav.data, href: `/${locale}/data`, rawHref: "/data", icon: "💾" },
+    { label: locale === "bn" ? "সেটিংস" : "Settings", href: `/${locale}/settings`, rawHref: "/settings", icon: "⚙️" },
   ];
 
   const toggleLanguage = () => {
@@ -335,17 +338,28 @@ export function Navigation({ username }: NavigationProps) {
             </span>
           </button>
 
-          <div className="flex items-center justify-between">
+          <Link
+            href={`/${locale}/settings`}
+            className="flex items-center justify-between p-2 rounded-2xl hover:bg-slate-800/60 transition group cursor-pointer border border-transparent hover:border-slate-800"
+            title="Click to edit profile & timezone"
+          >
             <div className="flex items-center gap-2.5 overflow-hidden">
-              <div className="w-8 h-8 rounded-full bg-slate-800 border border-white/10 flex items-center justify-center text-xs font-bold text-emerald-400 uppercase">
-                {displayUsername.slice(0, 2)}
+              <div className="w-8 h-8 rounded-full bg-slate-800 border border-white/10 flex items-center justify-center text-xs font-bold text-emerald-400 uppercase shrink-0">
+                {(name || displayUsername).slice(0, 2)}
               </div>
               <div className="truncate">
-                <div className="text-sm font-semibold text-white truncate">{displayUsername}</div>
-                <div className="text-[10px] text-slate-500">Connected</div>
+                <div className="text-sm font-semibold text-white truncate group-hover:text-emerald-400 transition">
+                  {name || displayUsername}
+                </div>
+                <div className="text-[10px] text-slate-500 truncate flex items-center gap-1">
+                  <span>@{username}</span>
+                  <span>•</span>
+                  <span className="text-cyan-400/80 font-mono">{timezone.split("/")[1] || timezone}</span>
+                </div>
               </div>
             </div>
-          </div>
+            <span className="text-xs text-slate-500 group-hover:text-slate-300">⚙️</span>
+          </Link>
 
           <form action={signOutAction}>
             <button

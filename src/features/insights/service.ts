@@ -12,6 +12,12 @@ import {
 import { listAccounts } from "../accounts/service";
 import { listPeople } from "../people/service";
 import { DEFAULT_CURRENCY } from "../../lib/money/money";
+import {
+  getZonedDateParts,
+  formatZonedHourLabel,
+  DEFAULT_APP_TIMEZONE,
+  isValidTimezone,
+} from "../../lib/date/timezone";
 
 export type GranularityPeriod = "hour" | "day" | "week" | "month" | "year";
 
@@ -79,7 +85,9 @@ export interface DashboardInsights {
 export async function getDashboardInsights(
   userId: string,
   currency = DEFAULT_CURRENCY,
+  timezone = DEFAULT_APP_TIMEZONE,
 ): Promise<DashboardInsights> {
+  const validTz = isValidTimezone(timezone) ? timezone : DEFAULT_APP_TIMEZONE;
   const now = new Date();
 
   // 1. Net Position from Accounts
@@ -129,24 +137,27 @@ export async function getDashboardInsights(
         ),
       ),
 
-    // Daily (last 14 days)
-    db
-      .select({
-        day: sql<string>`to_char(${ledgerTransactions.occurredAt}, 'YYYY-MM-DD')`,
-        income: sql<string>`coalesce(sum(case when ${ledgerTransactions.type} = 'income' then ${ledgerTransactions.amountMinor} else 0 end), 0)`,
-        expense: sql<string>`coalesce(sum(case when ${ledgerTransactions.type} = 'expense' then ${ledgerTransactions.amountMinor} else 0 end), 0)`,
-      })
-      .from(ledgerTransactions)
-      .where(
-        and(
-          eq(ledgerTransactions.userId, userId),
-          eq(ledgerTransactions.currency, currency),
-          gte(ledgerTransactions.occurredAt, fourteenDaysAgo),
-          isNull(ledgerTransactions.reversedAt),
-        ),
-      )
-      .groupBy(sql`to_char(${ledgerTransactions.occurredAt}, 'YYYY-MM-DD')`)
-      .orderBy(sql`to_char(${ledgerTransactions.occurredAt}, 'YYYY-MM-DD')`),
+    // Daily (last 14 days) in user's master timezone
+    (() => {
+      const dayExpr = sql<string>`to_char(${ledgerTransactions.occurredAt} AT TIME ZONE ${sql.raw(`'${validTz.replace(/'/g, "''")}'`)}, 'YYYY-MM-DD')`;
+      return db
+        .select({
+          day: dayExpr,
+          income: sql<string>`coalesce(sum(case when ${ledgerTransactions.type} = 'income' then ${ledgerTransactions.amountMinor} else 0 end), 0)`,
+          expense: sql<string>`coalesce(sum(case when ${ledgerTransactions.type} = 'expense' then ${ledgerTransactions.amountMinor} else 0 end), 0)`,
+        })
+        .from(ledgerTransactions)
+        .where(
+          and(
+            eq(ledgerTransactions.userId, userId),
+            eq(ledgerTransactions.currency, currency),
+            gte(ledgerTransactions.occurredAt, fourteenDaysAgo),
+            isNull(ledgerTransactions.reversedAt),
+          ),
+        )
+        .groupBy(dayExpr)
+        .orderBy(dayExpr);
+    })(),
 
     // Weekly (last 8 weeks)
     db
@@ -206,10 +217,10 @@ export async function getDashboardInsights(
       .orderBy(sql`to_char(${ledgerTransactions.occurredAt}, 'YYYY')`),
   ]);
 
-  // Construct continuous Hourly points & comparison (This Hour vs Previous Hour)
+  // Construct continuous Hourly points & comparison in user's master timezone
   const hourlyMap = new Map<string, { income: bigint; expense: bigint }>();
   for (const row of hourlyRows) {
-    const key = format(row.occurredAt, "yyyy-MM-dd HH:00");
+    const key = getZonedDateParts(row.occurredAt, validTz).hourKey;
     const existing = hourlyMap.get(key) || { income: 0n, expense: 0n };
     if (row.type === "income") {
       existing.income += row.amountMinor;
@@ -219,13 +230,17 @@ export async function getDashboardInsights(
     hourlyMap.set(key, existing);
   }
 
+  const currentHourParts = getZonedDateParts(now, validTz);
   const hourPoints: GranularCashFlowPoint[] = [];
   for (let i = 23; i >= 0; i--) {
-    const h = subHours(now, i);
-    const key = format(h, "yyyy-MM-dd HH:00");
-    const label = format(h, "h a");
-    const isToday = format(h, "yyyy-MM-dd") === format(now, "yyyy-MM-dd");
-    const periodLabel = isToday ? "Today" : format(h, "d MMM");
+    const pastTime = new Date(now.getTime() - i * 60 * 60 * 1000);
+    const parts = getZonedDateParts(pastTime, validTz);
+    const key = parts.hourKey;
+    const label = formatZonedHourLabel(parts.hour);
+    const isToday = parts.dateKey === currentHourParts.dateKey;
+    const periodLabel = isToday
+      ? "Today"
+      : new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: validTz }).format(pastTime);
     const val = hourlyMap.get(key) || { income: 0n, expense: 0n };
     hourPoints.push({
       key,
@@ -237,28 +252,29 @@ export async function getDashboardInsights(
     });
   }
 
-  const thisHourKey = format(now, "yyyy-MM-dd HH:00");
-  const prevHourKey = format(subHours(now, 1), "yyyy-MM-dd HH:00");
+  const thisHourKey = currentHourParts.hourKey;
+  const prevHourParts = getZonedDateParts(new Date(now.getTime() - 60 * 60 * 1000), validTz);
+  const prevHourKey = prevHourParts.hourKey;
   const thisHourVal = hourlyMap.get(thisHourKey) || { income: 0n, expense: 0n };
   const prevHourVal = hourlyMap.get(prevHourKey) || { income: 0n, expense: 0n };
   const hourComparison: GranularComparison = {
     current: {
       label: "This Hour",
-      periodLabel: format(now, "d MMM, h a"),
+      periodLabel: new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short", hour: "numeric", hour12: true, timeZone: validTz }).format(now),
       incomeMinor: thisHourVal.income,
       expenseMinor: thisHourVal.expense,
       netMinor: thisHourVal.income - thisHourVal.expense,
     },
     previous: {
       label: "Prev Hour",
-      periodLabel: format(subHours(now, 1), "d MMM, h a"),
+      periodLabel: new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short", hour: "numeric", hour12: true, timeZone: validTz }).format(new Date(now.getTime() - 60 * 60 * 1000)),
       incomeMinor: prevHourVal.income,
       expenseMinor: prevHourVal.expense,
       netMinor: prevHourVal.income - prevHourVal.expense,
     },
   };
 
-  // Construct continuous Daily points & comparison (Today vs Yesterday)
+  // Construct continuous Daily points & comparison (Today vs Yesterday) in user's master timezone
   const dailyMap = new Map(
     dailyRows.map((r) => [
       r.day,
@@ -267,9 +283,10 @@ export async function getDashboardInsights(
   );
   const dayPoints: GranularCashFlowPoint[] = [];
   for (let i = 13; i >= 0; i--) {
-    const d = subDays(now, i);
-    const key = format(d, "yyyy-MM-dd");
-    const label = i === 0 ? "Today" : format(d, "d MMM");
+    const pastDay = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+    const parts = getZonedDateParts(pastDay, validTz);
+    const key = parts.dateKey;
+    const label = i === 0 ? "Today" : `${parts.day} ${new Intl.DateTimeFormat("en-US", { month: "short", timeZone: validTz }).format(pastDay)}`;
     const val = dailyMap.get(key) || { income: 0n, expense: 0n };
     dayPoints.push({
       key,
@@ -279,21 +296,22 @@ export async function getDashboardInsights(
       netCashFlowMinor: val.income - val.expense,
     });
   }
-  const todayKey = format(now, "yyyy-MM-dd");
-  const yesterdayKey = format(subDays(now, 1), "yyyy-MM-dd");
+  const todayKey = currentHourParts.dateKey;
+  const yesterdayParts = getZonedDateParts(new Date(now.getTime() - 24 * 60 * 60 * 1000), validTz);
+  const yesterdayKey = yesterdayParts.dateKey;
   const todayVal = dailyMap.get(todayKey) || { income: 0n, expense: 0n };
   const yesterdayVal = dailyMap.get(yesterdayKey) || { income: 0n, expense: 0n };
   const dayComparison: GranularComparison = {
     current: {
       label: "Today",
-      periodLabel: format(now, "d MMM yyyy"),
+      periodLabel: new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short", year: "numeric", timeZone: validTz }).format(now),
       incomeMinor: todayVal.income,
       expenseMinor: todayVal.expense,
       netMinor: todayVal.income - todayVal.expense,
     },
     previous: {
       label: "Yesterday",
-      periodLabel: format(subDays(now, 1), "d MMM yyyy"),
+      periodLabel: new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short", year: "numeric", timeZone: validTz }).format(new Date(now.getTime() - 24 * 60 * 60 * 1000)),
       incomeMinor: yesterdayVal.income,
       expenseMinor: yesterdayVal.expense,
       netMinor: yesterdayVal.income - yesterdayVal.expense,

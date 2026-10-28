@@ -79,12 +79,13 @@ export function createMemoryDatabase(): MemoryDatabaseResult {
       let trimmed = statement.trim();
       if (!trimmed) continue;
 
-      // Skip plpgsql triggers and functions (pg-mem doesn't execute plpgsql trigger bodies)
+      // Skip plpgsql triggers, functions, and DO $$ blocks (pg-mem doesn't execute plpgsql)
       if (
         /CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION/i.test(trimmed) ||
         /CREATE\s+(?:CONSTRAINT\s+)?TRIGGER/i.test(trimmed) ||
         /DROP\s+(?:CONSTRAINT\s+)?TRIGGER/i.test(trimmed) ||
-        /DROP\s+FUNCTION/i.test(trimmed)
+        /DROP\s+FUNCTION/i.test(trimmed) ||
+        /^DO\s+\$\$/i.test(trimmed)
       ) {
         continue;
       }

@@ -3,8 +3,13 @@
 import { redirect } from "next/navigation";
 import { signUp, signIn, signOut } from "./service";
 import { signUpSchema, signInSchema } from "./validation";
+import { isSignUpEnabled } from "../../lib/config/env";
 
 export async function signUpAction(formData: FormData) {
+  if (!isSignUpEnabled()) {
+    return { error: "New user registration is currently disabled." };
+  }
+
   const username = formData.get("username") as string;
   const password = formData.get("password") as string;
 

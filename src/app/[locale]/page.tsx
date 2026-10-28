@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { getSessionUser } from "../../features/auth/session";
 import { getDictionary, type Locale } from "../../lib/i18n";
 import { ShieldCheck, WifiOff, RefreshCw, Layers, ArrowRight } from "lucide-react";
+import { isSignUpEnabled } from "../../lib/config/env";
 
 interface LocaleHomePageProps {
   params: Promise<{
@@ -16,6 +17,7 @@ export default async function LocaleHomePage({ params }: LocaleHomePageProps) {
   const { locale: rawLocale } = await params;
   const locale: Locale = rawLocale === "bn" ? "bn" : "en";
   const t = getDictionary(locale);
+  const signupEnabled = isSignUpEnabled();
 
   if (user) {
     redirect(`/${locale}/dashboard`);
@@ -45,12 +47,21 @@ export default async function LocaleHomePage({ params }: LocaleHomePageProps) {
           >
             {locale === "bn" ? "লগইন" : "Sign In"}
           </Link>
-          <Link
-            href={`/${locale}/sign-up`}
-            className="text-sm font-semibold bg-emerald-500 hover:bg-emerald-400 text-slate-950 px-5 py-2.5 rounded-xl transition shadow-lg shadow-emerald-500/25 cursor-pointer"
-          >
-            {locale === "bn" ? "নিবন্ধন করুন" : "Get Started"}
-          </Link>
+          {signupEnabled ? (
+            <Link
+              href={`/${locale}/sign-up`}
+              className="text-sm font-semibold bg-emerald-500 hover:bg-emerald-400 text-slate-950 px-5 py-2.5 rounded-xl transition shadow-lg shadow-emerald-500/25 cursor-pointer"
+            >
+              {locale === "bn" ? "নিবন্ধন করুন" : "Get Started"}
+            </Link>
+          ) : (
+            <Link
+              href={`/${locale}/sign-in`}
+              className="text-sm font-semibold bg-emerald-500 hover:bg-emerald-400 text-slate-950 px-5 py-2.5 rounded-xl transition shadow-lg shadow-emerald-500/25 cursor-pointer"
+            >
+              {locale === "bn" ? "লগইন করুন" : "Sign In"}
+            </Link>
+          )}
         </div>
       </header>
 

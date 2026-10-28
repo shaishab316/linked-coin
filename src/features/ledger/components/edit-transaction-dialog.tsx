@@ -5,6 +5,11 @@ import { updateTransactionAction } from "../actions";
 import { minorToDecimalString } from "../../../lib/money/money";
 import dayjs from "../../../lib/date/dayjs";
 import {
+  getZonedDateTimeLocalString,
+  zonedLocalToUtc,
+  DEFAULT_APP_TIMEZONE,
+} from "../../../lib/date/timezone";
+import {
   Edit3,
   Copy,
   Check,
@@ -28,6 +33,7 @@ interface EditTransactionDialogProps {
   };
   allTags?: Array<{ id: string; name: string }>;
   trigger?: React.ReactNode;
+  userTimezone?: string;
 }
 
 function generateRandomCode(length = 8): string {
@@ -43,6 +49,7 @@ export function EditTransactionDialog({
   transaction,
   allTags = [],
   trigger,
+  userTimezone = DEFAULT_APP_TIMEZONE,
 }: EditTransactionDialogProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [expectedCode, setExpectedCode] = useState("");
@@ -82,11 +89,11 @@ export function EditTransactionDialog({
           ? transaction.amountMinor
           : BigInt(transaction.amountMinor || "0");
       setAmount(minorToDecimalString(minor, transaction.currency));
-      setOccurredAt(dayjs(transaction.occurredAt).format("YYYY-MM-DDTHH:mm"));
+      setOccurredAt(getZonedDateTimeLocalString(transaction.occurredAt, userTimezone));
       setNotes(transaction.notes || "");
       setSelectedTagIds(transaction.tags?.map((t) => t.id) || []);
     }
-  }, [isOpen, transaction]);
+  }, [isOpen, transaction, userTimezone]);
 
   const isCodeMatched =
     enteredCode.trim().length === 8 &&
@@ -120,7 +127,7 @@ export function EditTransactionDialog({
     formData.append("description", description.trim());
     formData.append("amount", amount.trim());
     formData.append("notes", notes.trim());
-    formData.append("occurredAt", new Date(occurredAt).toISOString());
+    formData.append("occurredAt", zonedLocalToUtc(occurredAt, userTimezone).toISOString());
     formData.append("confirmationCode", enteredCode.trim().toUpperCase());
     formData.append("expectedCode", expectedCode.toUpperCase());
 

@@ -12,7 +12,11 @@ export default async function DashboardLayout({
 
   return (
     <div className="min-h-screen bg-[#090d16] text-slate-100 flex flex-col md:flex-row">
-      <Navigation username={user.username} />
+      <Navigation
+        username={user.username}
+        name={user.name}
+        timezone={user.timezone}
+      />
 
       <main className="flex-1 flex flex-col min-w-0">
         <header className="h-14 border-b border-white/5 flex items-center justify-between px-6 bg-[#090d16]/80 backdrop-blur-md sticky top-0 z-20">

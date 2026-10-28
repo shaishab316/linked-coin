@@ -111,7 +111,7 @@ export interface ResolvedSharedPerson {
   valid: boolean;
   reason?: "invalid" | "expired" | "revoked";
   person?: PersonWithBalance;
-  owner?: { username: string };
+  owner?: { username: string; name?: string | null };
   link?: SharedPersonLink;
 }
 
@@ -149,9 +149,9 @@ export async function resolveSharedPerson(token: string): Promise<ResolvedShared
   // Fetch person balance
   const person = await getPersonById(link.userId, link.personId);
 
-  // Fetch owner username
+  // Fetch owner username and display name
   const [owner] = await db
-    .select({ username: users.username })
+    .select({ username: users.username, name: users.name })
     .from(users)
     .where(eq(users.id, link.userId))
     .limit(1);
@@ -159,7 +159,7 @@ export async function resolveSharedPerson(token: string): Promise<ResolvedShared
   return {
     valid: true,
     person,
-    owner: owner || { username: "Account Owner" },
+    owner: owner || { username: "Account Owner", name: null },
     link,
   };
 }

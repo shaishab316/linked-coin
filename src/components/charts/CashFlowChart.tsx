@@ -20,6 +20,12 @@ import { useI18n } from "../../lib/i18n/context";
 import { formatLocalizedAmount } from "../../lib/i18n";
 import { localDb } from "../../offline/database";
 import {
+  getZonedDateParts,
+  formatZonedHourLabel,
+  DEFAULT_APP_TIMEZONE,
+  isValidTimezone,
+} from "../../lib/date/timezone";
+import {
   TrendingUp,
   TrendingDown,
   ArrowRightLeft,
@@ -74,6 +80,7 @@ export interface MonthlyCashFlowPoint {
 }
 
 interface CashFlowChartProps {
+  userTimezone?: string;
   granularData?: {
     hour?: GranularCashFlowPropSet;
     day: GranularCashFlowPropSet;
@@ -92,6 +99,7 @@ interface CashFlowChartProps {
 }
 
 export function CashFlowChart({
+  userTimezone = "Asia/Dhaka",
   granularData,
   rawTransactions,
   data: fallbackData = [],
@@ -129,27 +137,23 @@ export function CashFlowChart({
     loadOffline();
   }, []);
 
-  // Browser-local timezone hourly aggregation
+  // Master user timezone hourly aggregation (matches server and eliminates any local offset)
   const clientHourlyGranular = useMemo(() => {
     if (!isMounted && granularData?.hour) {
       return granularData.hour;
     }
 
+    const validTz = isValidTimezone(userTimezone) ? userTimezone : DEFAULT_APP_TIMEZONE;
     const allTxs = [...(rawTransactions || []), ...offlinePending];
     const now = new Date();
 
-    // Map each transaction into the user's browser-local hour: "YYYY-MM-DD HH:00"
+    // Map each transaction into master timezone hour key: "YYYY-MM-DD HH:00"
     const hourlyMap = new Map<string, { income: bigint; expense: bigint }>();
 
     for (const tx of allTxs) {
-      const d = new Date(tx.occurredAt);
-      if (isNaN(d.getTime())) continue;
-
-      const year = d.getFullYear();
-      const month = String(d.getMonth() + 1).padStart(2, "0");
-      const day = String(d.getDate()).padStart(2, "0");
-      const hour = String(d.getHours()).padStart(2, "0");
-      const key = `${year}-${month}-${day} ${hour}:00`;
+      if (!tx.occurredAt) continue;
+      const parts = getZonedDateParts(tx.occurredAt, validTz);
+      const key = parts.hourKey;
 
       const amount = BigInt(tx.amountMinor || "0");
       const existing = hourlyMap.get(key) || { income: 0n, expense: 0n };
@@ -161,32 +165,24 @@ export function CashFlowChart({
       hourlyMap.set(key, existing);
     }
 
-    // 24 hourly buckets ending at current browser hour
-    const currentHour = new Date(now);
-    currentHour.setMinutes(0, 0, 0);
-
+    // 24 hourly buckets strictly in user's master timezone ending at current hour
+    const currentHourParts = getZonedDateParts(now, validTz);
     const points: GranularPointProps[] = [];
+
     for (let i = 23; i >= 0; i--) {
-      const h = new Date(currentHour.getTime() - i * 60 * 60 * 1000);
-      const year = h.getFullYear();
-      const month = String(h.getMonth() + 1).padStart(2, "0");
-      const day = String(h.getDate()).padStart(2, "0");
-      const hourNum = h.getHours();
-      const hourStr = String(hourNum).padStart(2, "0");
-      const key = `${year}-${month}-${day} ${hourStr}:00`;
+      const pastTime = new Date(now.getTime() - i * 60 * 60 * 1000);
+      const parts = getZonedDateParts(pastTime, validTz);
+      const key = parts.hourKey;
+      const label = formatZonedHourLabel(parts.hour);
 
-      // 12-hour local format: e.g. "11 AM", "12 PM", "1 PM"
-      const ampm = hourNum >= 12 ? "PM" : "AM";
-      const h12 = hourNum % 12 || 12;
-      const label = `${h12} ${ampm}`;
-
-      const isToday =
-        h.getFullYear() === now.getFullYear() &&
-        h.getMonth() === now.getMonth() &&
-        h.getDate() === now.getDate();
+      const isToday = parts.dateKey === currentHourParts.dateKey;
       const periodLabel = isToday
         ? "Today"
-        : h.toLocaleDateString(locale === "bn" ? "bn-BD" : "en-US", { month: "short", day: "numeric" });
+        : new Intl.DateTimeFormat(locale === "bn" ? "bn-BD" : "en-US", {
+            month: "short",
+            day: "numeric",
+            timeZone: validTz,
+          }).format(pastTime);
 
       const val = hourlyMap.get(key) || { income: 0n, expense: 0n };
       const net = val.income - val.expense;
@@ -201,38 +197,40 @@ export function CashFlowChart({
       });
     }
 
-    // Comparison: This Hour vs Prev Hour in local timezone
-    const thisHourDate = currentHour;
-    const thisYear = thisHourDate.getFullYear();
-    const thisMonth = String(thisHourDate.getMonth() + 1).padStart(2, "0");
-    const thisDay = String(thisHourDate.getDate()).padStart(2, "0");
-    const thisH = String(thisHourDate.getHours()).padStart(2, "0");
-    const thisKey = `${thisYear}-${thisMonth}-${thisDay} ${thisH}:00`;
-
-    const prevHourDate = new Date(currentHour.getTime() - 60 * 60 * 1000);
-    const prevYear = prevHourDate.getFullYear();
-    const prevMonth = String(prevHourDate.getMonth() + 1).padStart(2, "0");
-    const prevDay = String(prevHourDate.getDate()).padStart(2, "0");
-    const prevH = String(prevHourDate.getHours()).padStart(2, "0");
-    const prevKey = `${prevYear}-${prevMonth}-${prevDay} ${prevH}:00`;
+    // Comparison: This Hour vs Prev Hour in master timezone
+    const thisKey = currentHourParts.hourKey;
+    const prevHourParts = getZonedDateParts(new Date(now.getTime() - 60 * 60 * 1000), validTz);
+    const prevKey = prevHourParts.hourKey;
 
     const thisVal = hourlyMap.get(thisKey) || { income: 0n, expense: 0n };
     const prevVal = hourlyMap.get(prevKey) || { income: 0n, expense: 0n };
 
-    const thisHourLabel = `${thisHourDate.getHours() % 12 || 12} ${thisHourDate.getHours() >= 12 ? "PM" : "AM"}`;
-    const prevHourLabel = `${prevHourDate.getHours() % 12 || 12} ${prevHourDate.getHours() >= 12 ? "PM" : "AM"}`;
+    const thisHourLabel = formatZonedHourLabel(currentHourParts.hour);
+    const prevHourLabel = formatZonedHourLabel(prevHourParts.hour);
 
     const comparison: GranularComparisonProps = {
       current: {
         label: "This Hour",
-        periodLabel: `${thisHourDate.toLocaleDateString(locale === "bn" ? "bn-BD" : "en-US", { day: "numeric", month: "short" })}, ${thisHourLabel}`,
+        periodLabel: new Intl.DateTimeFormat(locale === "bn" ? "bn-BD" : "en-US", {
+          day: "numeric",
+          month: "short",
+          hour: "numeric",
+          hour12: true,
+          timeZone: validTz,
+        }).format(now),
         incomeMinor: thisVal.income.toString(),
         expenseMinor: thisVal.expense.toString(),
         netMinor: (thisVal.income - thisVal.expense).toString(),
       },
       previous: {
         label: "Prev Hour",
-        periodLabel: `${prevHourDate.toLocaleDateString(locale === "bn" ? "bn-BD" : "en-US", { day: "numeric", month: "short" })}, ${prevHourLabel}`,
+        periodLabel: new Intl.DateTimeFormat(locale === "bn" ? "bn-BD" : "en-US", {
+          day: "numeric",
+          month: "short",
+          hour: "numeric",
+          hour12: true,
+          timeZone: validTz,
+        }).format(new Date(now.getTime() - 60 * 60 * 1000)),
         incomeMinor: prevVal.income.toString(),
         expenseMinor: prevVal.expense.toString(),
         netMinor: (prevVal.income - prevVal.expense).toString(),
@@ -240,7 +238,7 @@ export function CashFlowChart({
     };
 
     return { points, comparison };
-  }, [rawTransactions, offlinePending, isMounted, granularData?.hour, locale]);
+  }, [rawTransactions, offlinePending, isMounted, granularData?.hour, locale, userTimezone]);
 
   // Dynamic Title based on active Period tab
   const dynamicTitle = useMemo(() => {

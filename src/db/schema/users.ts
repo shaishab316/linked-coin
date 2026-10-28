@@ -6,6 +6,8 @@ export const users = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     username: text("username").notNull(),
     passwordHash: text("password_hash").notNull(),
+    name: text("name"),
+    timezone: text("timezone").notNull().default("Asia/Dhaka"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
     passwordChangedAt: timestamp("password_changed_at", { withTimezone: true }),
