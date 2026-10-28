@@ -258,7 +258,7 @@ export function SharedStatementExplorer({
                   !hasDebt ? "text-slate-400" : owesOwner ? "text-emerald-400" : "text-rose-400"
                 }`}
               >
-                {formatLocalizedAmount(person.outstandingMinor, currency, locale, true)}
+                {formatLocalizedAmount(person.outstandingMinor, currency, locale as "en", true)}
               </span>
             </div>
           </div>
@@ -268,14 +268,14 @@ export function SharedStatementExplorer({
             <div className="p-3 rounded-2xl bg-slate-950/50 border border-slate-800/50">
               <span className="text-slate-400 font-medium block">Total Loans Recorded</span>
               <span className="text-base font-bold text-amber-300 mt-0.5 block">
-                {formatLocalizedAmount(stats.totalLoanGiven, currency, locale, false)}
+                {formatLocalizedAmount(stats.totalLoanGiven, currency, locale as "en", false)}
               </span>
             </div>
 
             <div className="p-3 rounded-2xl bg-slate-950/50 border border-slate-800/50">
               <span className="text-slate-400 font-medium block">Total Repayments Recorded</span>
               <span className="text-base font-bold text-emerald-400 mt-0.5 block">
-                {formatLocalizedAmount(stats.totalRepayments, currency, locale, false)}
+                {formatLocalizedAmount(stats.totalRepayments, currency, locale as "en", false)}
               </span>
             </div>
 
@@ -458,7 +458,7 @@ export function SharedStatementExplorer({
                                   : "text-slate-100"
                               }`}
                             >
-                              {formatLocalizedAmount(tx.amountMinor, tx.currency || currency, locale, false)}
+                              {formatLocalizedAmount(tx.amountMinor, tx.currency || currency, locale as "en", false)}
                             </span>
                           </div>
                         </div>
@@ -486,7 +486,7 @@ export function SharedStatementExplorer({
                                   </div>
                                 </div>
                                 <span className="font-bold text-cyan-300">
-                                  {formatLocalizedAmount(addon.amountMinor, addon.currency || currency, locale, false)}
+                                  {formatLocalizedAmount(addon.amountMinor, addon.currency || currency, locale as "en", false)}
                                 </span>
                               </div>
                             ))}
@@ -562,7 +562,7 @@ export function SharedStatementExplorer({
                         {typeLabel}
                       </td>
                       <td className="py-2.5 pl-4 align-top text-right font-bold text-black whitespace-nowrap">
-                        {formatLocalizedAmount(tx.amountMinor, tx.currency || currency, locale, false)}
+                        {formatLocalizedAmount(tx.amountMinor, tx.currency || currency, locale as "en", false)}
                       </td>
                     </tr>
 
@@ -580,7 +580,7 @@ export function SharedStatementExplorer({
                           Add-on
                         </td>
                         <td className="py-1.5 pl-4 align-top text-right font-semibold text-black whitespace-nowrap">
-                          {formatLocalizedAmount(addon.amountMinor, addon.currency || currency, locale, false)}
+                          {formatLocalizedAmount(addon.amountMinor, addon.currency || currency, locale as "en", false)}
                         </td>
                       </tr>
                     ))}
