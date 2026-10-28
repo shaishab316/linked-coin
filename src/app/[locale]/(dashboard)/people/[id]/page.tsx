@@ -10,6 +10,7 @@ import { getDictionary, formatLocalizedAmount, type Locale } from "../../../../.
 import { InteractiveTimelineView } from "../../../../../components/timeline/InteractiveTimelineView";
 import { PersonTagsSection } from "../../../../../features/tags/components/person-tags-section";
 import { EditPersonDialog } from "../../../../../features/people/components/edit-person-dialog";
+import { SharePersonDialog } from "../../../../../features/people/components/share-person-dialog";
 import { ArrowLeft, Archive, RotateCcw, HandCoins, ArrowDownLeft, ArrowUpRight, Phone } from "lucide-react";
 
 interface PersonDetailPageProps {
@@ -120,9 +121,10 @@ export default async function LocalizedPersonDetailPage({ params }: PersonDetail
               {person.name.slice(0, 2).toUpperCase()}
             </div>
             <div className="flex-1">
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2.5">
                 <h2 className="text-2xl sm:text-3xl font-black text-slate-100">{person.name}</h2>
                 <EditPersonDialog person={person} triggerVariant="button" />
+                <SharePersonDialog person={person} locale={locale} />
               </div>
               {person.contact && (
                 <p className="flex items-center gap-1.5 text-xs text-slate-400 mt-1">

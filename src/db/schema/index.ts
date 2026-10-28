@@ -11,3 +11,4 @@ export * from "./transaction-links";
 export * from "./financial-events";
 export * from "./sync";
 export * from "./saved-queries";
+export * from "./shared-links";
