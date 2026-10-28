@@ -262,10 +262,11 @@ export function InteractiveTimelineView({
       case "repayment_received":
         return {
           icon: ArrowDownLeft,
-          color: "text-emerald-400 bg-emerald-500/15 border-emerald-500/30",
+          color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/25",
           nodeColor: "bg-emerald-500",
+          nodeGlow: "shadow-[0_0_10px_rgba(16,185,129,0.5)]",
           accentBorder: "border-l-4 border-l-emerald-500",
-          badgeColor: "bg-emerald-500/20 text-emerald-300",
+          badgeColor: "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30",
           amountColor: "text-emerald-400",
           sign: "+",
         };
@@ -273,20 +274,22 @@ export function InteractiveTimelineView({
       case "repayment_made":
         return {
           icon: ArrowUpRight,
-          color: "text-rose-400 bg-rose-500/15 border-rose-500/30",
+          color: "text-rose-400 bg-rose-500/10 border-rose-500/25",
           nodeColor: "bg-rose-500",
+          nodeGlow: "shadow-[0_0_10px_rgba(244,63,94,0.5)]",
           accentBorder: "border-l-4 border-l-rose-500",
-          badgeColor: "bg-rose-500/20 text-rose-300",
+          badgeColor: "bg-rose-500/15 text-rose-300 border border-rose-500/30",
           amountColor: "text-rose-400",
           sign: "-",
         };
       case "transfer":
         return {
           icon: ArrowLeftRight,
-          color: "text-sky-400 bg-sky-500/15 border-sky-500/30",
+          color: "text-sky-400 bg-sky-500/10 border-sky-500/25",
           nodeColor: "bg-sky-500",
+          nodeGlow: "shadow-[0_0_10px_rgba(14,165,233,0.5)]",
           accentBorder: "border-l-4 border-l-sky-500",
-          badgeColor: "bg-sky-500/20 text-sky-300",
+          badgeColor: "bg-sky-500/15 text-sky-300 border border-sky-500/30",
           amountColor: "text-sky-400",
           sign: "",
         };
@@ -294,10 +297,11 @@ export function InteractiveTimelineView({
       case "loan_received":
         return {
           icon: HandCoins,
-          color: "text-purple-400 bg-purple-500/15 border-purple-500/30",
+          color: "text-purple-400 bg-purple-500/10 border-purple-500/25",
           nodeColor: "bg-purple-500",
+          nodeGlow: "shadow-[0_0_10px_rgba(168,85,247,0.5)]",
           accentBorder: "border-l-4 border-l-purple-500",
-          badgeColor: "bg-purple-500/20 text-purple-300",
+          badgeColor: "bg-purple-500/15 text-purple-300 border border-purple-500/30",
           amountColor: "text-purple-400",
           sign: type === "loan_given" ? "-" : "+",
         };
@@ -306,6 +310,7 @@ export function InteractiveTimelineView({
           icon: RotateCcw,
           color: "text-slate-400 bg-slate-800 border-slate-700",
           nodeColor: "bg-slate-500",
+          nodeGlow: "",
           accentBorder: "border-l-4 border-l-slate-600",
           badgeColor: "bg-slate-800 text-slate-300",
           amountColor: "text-slate-300",
@@ -372,39 +377,77 @@ export function InteractiveTimelineView({
           const items = groupedByDate[dateKey] || [];
           const allInDateSelected = items.every((i) => selectedIds.includes(i.id));
 
+          // Calculate daily inflow & outflow for the date group header
+          let dayInflowMinor = 0n;
+          let dayOutflowMinor = 0n;
+          for (const item of items) {
+            if (item.type === "income" || item.type === "repayment_received") {
+              dayInflowMinor += item.amountMinor;
+            } else if (item.type === "expense" || item.type === "repayment_made") {
+              dayOutflowMinor += item.amountMinor;
+            }
+            const coupled = parentAddonMap.get(item.id) || [];
+            for (const a of coupled) {
+              if (a.type === "income" || a.type === "repayment_received") {
+                dayInflowMinor += BigInt(a.amountMinor.toString());
+              } else {
+                dayOutflowMinor += BigInt(a.amountMinor.toString());
+              }
+            }
+          }
+
           return (
             <div key={dateKey} className="relative">
               {/* Date Header Node */}
-              <div className="sticky top-16 z-20 mb-4 flex items-center justify-between backdrop-blur-md py-1.5 px-3 rounded-2xl bg-[#090d16]/80 border border-slate-800/80">
-                <div className="flex items-center gap-2">
-                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-800 text-slate-300">
-                    <Calendar className="h-4 w-4" />
+              <div className="sticky top-16 z-20 mb-4 flex flex-wrap items-center justify-between gap-3 backdrop-blur-xl py-2.5 px-4 rounded-2xl bg-[#090d16]/90 border border-slate-800/80 shadow-lg shadow-black/20">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-800/80 border border-slate-700/60 text-slate-300 shadow-inner">
+                    <Calendar className="h-4 w-4 text-emerald-400" />
                   </div>
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300">
-                    {getRelativeDateLabel(dateKey)}
-                  </h4>
-                  <span className="text-[11px] text-slate-500">
-                    ({items.length})
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-xs sm:text-sm font-extrabold text-slate-100 tracking-tight">
+                      {getRelativeDateLabel(dateKey)}
+                    </h4>
+                    <span className="text-[11px] font-semibold text-slate-400 px-2 py-0.5 rounded-full bg-slate-800/80 border border-slate-700/50">
+                      {items.length} {items.length === 1 ? "entry" : "entries"}
+                    </span>
+                  </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => toggleSelectAllInDate(dateKey)}
-                  className="flex items-center gap-1 text-[11px] font-semibold text-slate-400 hover:text-emerald-400 transition cursor-pointer"
-                >
-                  {allInDateSelected ? (
-                    <>
-                      <CheckSquare className="h-3.5 w-3.5 text-emerald-400" />
-                      <span>{t.common.selected}</span>
-                    </>
-                  ) : (
-                    <>
-                      <Square className="h-3.5 w-3.5" />
-                      <span>{t.timeline.selectToMerge}</span>
-                    </>
+                <div className="flex items-center gap-3">
+                  {(dayInflowMinor > 0n || dayOutflowMinor > 0n) && (
+                    <div className="hidden sm:flex items-center gap-2 text-xs font-mono font-bold">
+                      {dayInflowMinor > 0n && (
+                        <span className="text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-lg">
+                          +{formatLocalizedAmount(dayInflowMinor, currency, locale, false)}
+                        </span>
+                      )}
+                      {dayOutflowMinor > 0n && (
+                        <span className="text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-lg">
+                          -{formatLocalizedAmount(dayOutflowMinor, currency, locale, false)}
+                        </span>
+                      )}
+                    </div>
                   )}
-                </button>
+
+                  <button
+                    type="button"
+                    onClick={() => toggleSelectAllInDate(dateKey)}
+                    className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-xl bg-slate-800/60 hover:bg-slate-800 border border-slate-700/60 text-slate-300 hover:text-emerald-400 transition cursor-pointer"
+                  >
+                    {allInDateSelected ? (
+                      <>
+                        <CheckSquare className="h-3.5 w-3.5 text-emerald-400" />
+                        <span className="text-emerald-400">{t.common.selected}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Square className="h-3.5 w-3.5 text-slate-400" />
+                        <span>{t.timeline.selectToMerge}</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
 
               {/* Connected Timeline Axis & Cards */}
@@ -429,10 +472,6 @@ export function InteractiveTimelineView({
                   const bundleTotalMinor = tx.amountMinor + addonsTotalMinor;
 
                   // Format dates strictly in user's browser local timezone
-                  const yearStr = dayjs(tx.occurredAt).format("YYYY");
-                  const dateStrFormatted = dayjs(tx.occurredAt)
-                    .locale(locale === "bn" ? "bn" : "en")
-                    .format("MMM D");
                   const timeStr = dayjs(tx.occurredAt)
                     .locale(locale === "bn" ? "bn" : "en")
                     .format("h:mm A");
@@ -441,25 +480,22 @@ export function InteractiveTimelineView({
                   return (
                     <div key={tx.id} className="relative flex items-start group">
                       {/* Left Column: Local Timestamp */}
-                      <div className="hidden sm:flex flex-col items-end w-24 md:w-28 shrink-0 pr-3 pt-3.5 select-none text-right">
-                        <span className="text-xs font-bold text-slate-200 tracking-tight">
-                          {yearStr}
-                        </span>
-                        <span className="text-[11px] font-semibold text-slate-400">
-                          {dateStrFormatted}
-                        </span>
-                        <span className="text-[10px] text-slate-500 font-mono">
+                      <div className="hidden md:flex flex-col items-end w-20 shrink-0 pr-3 pt-3.5 select-none text-right">
+                        <span className="text-xs font-mono font-bold text-slate-200">
                           {timeStr}
+                        </span>
+                        <span className="text-[10px] text-slate-500">
+                          {fromNowStr}
                         </span>
                       </div>
 
                       {/* Center Axis with Continuous Vertical Line & Bullet Node Dot */}
                       <div className="relative flex flex-col items-center shrink-0 self-stretch w-7 sm:w-8">
-                        <div className="absolute top-0 bottom-0 w-0.5 bg-slate-800 group-hover:bg-slate-700 transition" />
+                        <div className="absolute top-0 bottom-0 w-0.5 bg-gradient-to-b from-slate-700/80 via-slate-800 to-slate-800/40 group-hover:from-emerald-500/40 transition-colors" />
                         <div
-                          className={`relative top-4 z-10 flex h-4 w-4 items-center justify-center rounded-full border-2 border-[#090d16] ${visual.nodeColor} shadow-md transition-transform group-hover:scale-125`}
+                          className={`relative top-4 z-10 flex h-3.5 w-3.5 items-center justify-center rounded-full border-2 border-[#090d16] ${visual.nodeColor} ${visual.nodeGlow} transition-transform group-hover:scale-125`}
                         >
-                          <div className="h-1.5 w-1.5 rounded-full bg-white" />
+                          <div className="h-1 w-1 rounded-full bg-white" />
                         </div>
                       </div>
 
@@ -467,13 +503,13 @@ export function InteractiveTimelineView({
                       <div className="flex-1 min-w-0 pl-1.5 sm:pl-3 pb-2 space-y-2">
                         <div
                           onClick={() => setExpandedId(isExpanded ? null : tx.id)}
-                          className={`cursor-pointer rounded-2xl border transition-all duration-200 ${visual.accentBorder} ${
+                          className={`group/card cursor-pointer rounded-2xl border transition-all duration-200 ${visual.accentBorder} ${
                             isSelected
-                              ? "border-emerald-500/60 bg-emerald-950/20 shadow-lg shadow-emerald-950/40"
+                              ? "border-emerald-500/70 bg-emerald-950/20 ring-1 ring-emerald-500/40 shadow-xl shadow-emerald-950/30"
                               : isReversed
                               ? "border-slate-800/50 bg-slate-900/30 opacity-60"
-                              : "border-slate-800/80 bg-slate-900/70 hover:border-slate-700 hover:bg-slate-900 shadow-sm"
-                          } p-4`}
+                              : "border-slate-800/80 bg-slate-900/70 hover:bg-slate-900 hover:border-slate-700/80 shadow-md shadow-black/20 hover:shadow-xl hover:shadow-black/40 hover:-translate-y-0.5"
+                          } p-3.5 sm:p-4`}
                         >
                           <div className="flex items-start justify-between gap-3">
                             {/* Left: Checkbox + Icon + Details */}
@@ -481,7 +517,7 @@ export function InteractiveTimelineView({
                               <button
                                 type="button"
                                 onClick={(e) => toggleSelect(tx.id, e)}
-                                className="mt-0.5 p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-emerald-400 transition shrink-0 cursor-pointer"
+                                className="mt-1 p-1 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-emerald-400 transition shrink-0 cursor-pointer"
                               >
                                 {isSelected ? (
                                   <CheckSquare className="h-4 w-4 text-emerald-400" />
@@ -491,15 +527,15 @@ export function InteractiveTimelineView({
                               </button>
 
                               <div
-                                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border ${visual.color}`}
+                                className={`flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-2xl border ${visual.color} shadow-inner transition-transform group-hover/card:scale-105`}
                               >
                                 <Icon className="h-5 w-5" />
                               </div>
 
-                              <div className="space-y-1 min-w-0">
+                              <div className="space-y-1.5 min-w-0">
                                 {/* Title (Description) + Badges */}
                                 <div className="flex flex-wrap items-center gap-2">
-                                  <h5 className="text-sm font-bold text-slate-100 group-hover:text-emerald-400 transition truncate">
+                                  <h5 className="text-sm sm:text-base font-bold text-slate-100 group-hover/card:text-emerald-300 transition truncate">
                                     {tx.description}
                                   </h5>
 
@@ -508,59 +544,43 @@ export function InteractiveTimelineView({
                                     <button
                                       type="button"
                                       onClick={(e) => toggleCollapseAddons(tx.id, e)}
-                                      className="flex items-center gap-1 rounded-full bg-cyan-500/15 border border-cyan-500/30 px-2 py-0.5 text-[10px] font-bold text-cyan-300 hover:bg-cyan-500/25 transition cursor-pointer"
+                                      className="inline-flex items-center gap-1 rounded-full bg-cyan-500/15 border border-cyan-500/30 hover:border-cyan-500/60 hover:bg-cyan-500/25 px-2.5 py-0.5 text-[11px] font-bold text-cyan-300 transition cursor-pointer shadow-sm shadow-cyan-950/40"
                                       title="Toggle coupled addon transactions"
                                     >
                                       <Paperclip className="h-3 w-3" />
                                       <span>
                                         +{coupledAddons.length} {coupledAddons.length === 1 ? "Add-on" : "Add-ons"}
                                       </span>
+                                      <ChevronDown className={`h-3 w-3 transition-transform ${areAddonsCollapsed ? "" : "rotate-180"}`} />
                                     </button>
                                   )}
 
                                   {/* Standalone Addon Indicator */}
                                   {tx.isAddon && !tx.parentTransactionId && (
-                                    <span className="rounded-full bg-cyan-500/20 px-2 py-0.5 text-[10px] font-bold text-cyan-300">
+                                    <span className="rounded-full bg-cyan-500/20 border border-cyan-500/30 px-2 py-0.5 text-[10px] font-bold text-cyan-300">
                                       📎 Add-on
                                     </span>
                                   )}
 
                                   {/* Offline Pending Badge */}
                                   {isPending && (
-                                    <span className="flex items-center gap-1 rounded-full bg-amber-500/20 border border-amber-500/30 px-2 py-0.5 text-[10px] font-bold text-amber-300">
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/20 border border-amber-500/30 px-2 py-0.5 text-[10px] font-bold text-amber-300">
                                       <CloudOff className="h-3 w-3" />
-                                      <span>Offline · Pending Sync</span>
+                                      <span>Offline</span>
                                     </span>
                                   )}
 
                                   {isReversed && (
-                                    <span className="rounded-full bg-rose-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-rose-300">
+                                    <span className="rounded-full bg-rose-500/20 border border-rose-500/30 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-rose-300">
                                       {t.timeline.reversedBadge}
                                     </span>
                                   )}
                                 </div>
 
-                                {/* Italic Relative Subtitle: from now */}
-                                <div className="flex flex-wrap items-center gap-2 text-xs">
-                                  <span className="italic font-serif font-medium text-amber-400/90 tracking-wide">
-                                    {fromNowStr}
-                                  </span>
-                                  {/* Mobile-only date indicator */}
-                                  <span className="sm:hidden text-[10px] text-slate-500 font-mono">
-                                    • {dateStrFormatted}, {timeStr}
-                                  </span>
-
-                                  {hasAddons && (
-                                    <span className="text-[11px] text-cyan-400 font-mono font-medium">
-                                      · Total with add-ons: {formatLocalizedAmount(bundleTotalMinor, tx.currency, locale, visual.sign as any)}
-                                    </span>
-                                  )}
-                                </div>
-
-                                {/* Badges: Account, Tag, Person */}
-                                <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[11px] text-slate-400">
+                                {/* Badges & Context row: Account, Tag, Person, Mobile time */}
+                                <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-400">
                                   {tx.accountName && (
-                                    <span className="flex items-center gap-1 rounded-lg bg-slate-800/90 px-2 py-0.5 text-slate-300">
+                                    <span className="inline-flex items-center gap-1 rounded-lg bg-slate-800/80 border border-slate-700/50 px-2 py-0.5 text-[11px] font-medium text-slate-300">
                                       <Wallet className="h-3 w-3 text-slate-400" />
                                       {tx.accountName}
                                     </span>
@@ -570,7 +590,7 @@ export function InteractiveTimelineView({
                                     tx.tags.map((tag) => (
                                       <span
                                         key={tag.id}
-                                        className="flex items-center gap-1 rounded-lg bg-emerald-500/10 px-2 py-0.5 text-emerald-400 border border-emerald-500/20"
+                                        className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-400 border border-emerald-500/20"
                                       >
                                         <TagIcon className="h-3 w-3" />
                                         {tag.name}
@@ -581,20 +601,25 @@ export function InteractiveTimelineView({
                                     <Link
                                       href={`/${locale}/people`}
                                       onClick={(e) => e.stopPropagation()}
-                                      className="flex items-center gap-1 rounded-lg bg-purple-500/10 px-2 py-0.5 text-purple-300 border border-purple-500/20 hover:bg-purple-500/20 transition"
+                                      className="inline-flex items-center gap-1 rounded-lg bg-purple-500/10 px-2 py-0.5 text-[11px] font-medium text-purple-300 border border-purple-500/20 hover:bg-purple-500/20 transition"
                                     >
                                       <User className="h-3 w-3 text-purple-400" />
                                       {tx.personName}
                                     </Link>
                                   )}
+
+                                  {/* Mobile-only time indicator */}
+                                  <span className="md:hidden text-[11px] text-slate-500 font-mono">
+                                    • {timeStr} ({fromNowStr})
+                                  </span>
                                 </div>
                               </div>
                             </div>
 
                             {/* Right: Amount & Quick Edit & Expand Arrow */}
-                            <div className="flex flex-col items-end justify-between shrink-0">
+                            <div className="flex flex-col items-end justify-between shrink-0 pl-2">
                               <span
-                                className={`text-base font-extrabold ${visual.amountColor} ${
+                                className={`text-base sm:text-lg font-black font-mono tracking-tight ${visual.amountColor} ${
                                   isReversed ? "line-through opacity-70" : ""
                                 }`}
                               >
@@ -606,32 +631,38 @@ export function InteractiveTimelineView({
                                 )}
                               </span>
 
-                              <div className="flex items-center gap-1.5 mt-2">
+                              {hasAddons && (
+                                <span className="text-[11px] text-cyan-400 font-mono font-medium tracking-tight mt-0.5">
+                                  Total: {formatLocalizedAmount(bundleTotalMinor, tx.currency, locale, visual.sign as any)}
+                                </span>
+                              )}
+
+                              <div className="flex items-center gap-1 mt-2">
                                 {!isReversed && tx.type !== "reversal" && !isPending && (
                                   <>
                                     <Link
                                       href={`/${locale}/transactions/new?addonsForId=${tx.id}`}
                                       onClick={(e) => e.stopPropagation()}
-                                      className="p-1.5 rounded-lg text-slate-500 hover:text-cyan-400 hover:bg-slate-800 transition cursor-pointer"
-                                      title="Add an add-on transaction to this transaction"
+                                      className="p-1.5 rounded-lg text-slate-400 hover:text-cyan-400 hover:bg-slate-800 transition cursor-pointer"
+                                      title="Add an add-on transaction"
                                     >
                                       <Paperclip className="h-3.5 w-3.5" />
                                     </Link>
                                     <Link
                                       href={`/${locale}/transactions/new?id=${tx.id}`}
                                       onClick={(e) => e.stopPropagation()}
-                                      className="p-1.5 rounded-lg text-slate-500 hover:text-amber-400 hover:bg-slate-800 transition cursor-pointer"
+                                      className="p-1.5 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition cursor-pointer"
                                       title="Edit transaction"
                                     >
                                       <Edit3 className="h-3.5 w-3.5" />
                                     </Link>
                                   </>
                                 )}
-                                <div className="text-slate-500 group-hover:text-slate-300 transition">
+                                <div className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 transition">
                                   {isExpanded ? (
-                                    <ChevronUp className="h-4 w-4" />
+                                    <ChevronUp className="h-3.5 w-3.5" />
                                   ) : (
-                                    <ChevronDown className="h-4 w-4" />
+                                    <ChevronDown className="h-3.5 w-3.5" />
                                   )}
                                 </div>
                               </div>
@@ -725,40 +756,53 @@ export function InteractiveTimelineView({
 
                         {/* Awesome Coupled Add-ons Display */}
                         {hasAddons && !areAddonsCollapsed && (
-                          <div className="ml-4 sm:ml-7 space-y-2 border-l-2 border-dashed border-cyan-500/30 pl-3 sm:pl-4 pt-1 animate-in fade-in duration-200">
+                          <div className="ml-5 sm:ml-9 mt-2.5 space-y-2 border-l-2 border-dashed border-cyan-500/40 pl-4 sm:pl-5 animate-in fade-in slide-in-from-top-1 duration-200">
+                            <div className="flex items-center justify-between text-[11px] font-bold text-cyan-400 uppercase tracking-wider pb-1">
+                              <span className="flex items-center gap-1.5">
+                                <CornerDownRight className="h-3.5 w-3.5 text-cyan-400" />
+                                <span>Coupled Add-on Transactions ({coupledAddons.length})</span>
+                              </span>
+                              <span className="font-mono text-cyan-300">
+                                +{formatLocalizedAmount(addonsTotalMinor, tx.currency, locale, false)}
+                              </span>
+                            </div>
+
                             {coupledAddons.map((addon) => {
                               const addonVisual = getTypeVisual(addon.type);
                               return (
                                 <div
                                   key={addon.id}
-                                  className="group/addon relative flex items-center justify-between gap-3 p-3 rounded-xl bg-slate-900/60 border border-cyan-500/20 hover:border-cyan-500/50 hover:bg-slate-900/90 transition shadow-sm"
+                                  className="group/addon relative flex items-center justify-between gap-3 p-3 rounded-xl bg-cyan-950/20 border border-cyan-500/25 hover:border-cyan-500/50 hover:bg-cyan-950/40 transition-all duration-150 shadow-sm"
                                 >
                                   {/* Left: Connector Icon + Description */}
                                   <div className="flex items-center gap-2.5 min-w-0">
-                                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
+                                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-cyan-400">
                                       <CornerDownRight className="h-3.5 w-3.5" />
                                     </div>
-                                    <div className="min-w-0">
+                                    <div className="min-w-0 space-y-0.5">
                                       <div className="flex items-center gap-2">
-                                        <span className="text-xs font-bold text-slate-200 group-hover/addon:text-cyan-300 transition truncate">
+                                        <span className="text-xs sm:text-sm font-bold text-slate-100 group-hover/addon:text-cyan-200 transition truncate">
                                           {addon.description}
                                         </span>
-                                        <span className="text-[9px] uppercase font-bold text-cyan-400 bg-cyan-500/15 border border-cyan-500/30 px-1.5 py-0.2 rounded">
+                                        <span className="text-[9px] uppercase font-black text-cyan-300 bg-cyan-500/20 border border-cyan-500/35 px-1.5 py-0.2 rounded-full">
                                           Add-on
                                         </span>
                                       </div>
-                                      {addon.accountName && (
-                                        <span className="text-[10px] text-slate-500 flex items-center gap-1 pt-0.5">
-                                          <Wallet className="h-2.5 w-2.5" />
-                                          {addon.accountName}
-                                        </span>
-                                      )}
+                                      <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                                        {addon.accountName && (
+                                          <span className="flex items-center gap-1">
+                                            <Wallet className="h-2.5 w-2.5 text-slate-500" />
+                                            {addon.accountName}
+                                          </span>
+                                        )}
+                                        <span>• {formatFromNow(addon.occurredAt, locale)}</span>
+                                      </div>
                                     </div>
                                   </div>
 
                                   {/* Right: Amount & Edit & Details */}
                                   <div className="flex items-center gap-2 shrink-0">
-                                    <span className="text-xs font-bold font-mono text-cyan-300">
+                                    <span className="text-xs sm:text-sm font-bold font-mono text-cyan-300">
                                       {formatLocalizedAmount(
                                         BigInt(addon.amountMinor.toString()),
                                         addon.currency,
@@ -766,21 +810,23 @@ export function InteractiveTimelineView({
                                         addonVisual.sign as any,
                                       )}
                                     </span>
-                                    <Link
-                                      href={`/${locale}/transactions/new?id=${addon.id}`}
-                                      onClick={(e) => e.stopPropagation()}
-                                      className="p-1 rounded-lg text-slate-500 hover:text-amber-400 hover:bg-slate-800 transition cursor-pointer"
-                                      title="Edit this add-on transaction"
-                                    >
-                                      <Edit3 className="h-3 w-3" />
-                                    </Link>
-                                    <Link
-                                      href={`${basePath}/${addon.id}`}
-                                      className="text-[11px] text-slate-500 hover:text-cyan-400 transition"
-                                      title="View Add-on Details"
-                                    >
-                                      →
-                                    </Link>
+                                    <div className="flex items-center gap-1 pl-1">
+                                      <Link
+                                        href={`/${locale}/transactions/new?id=${addon.id}`}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="p-1.5 rounded-lg text-slate-400 hover:text-amber-300 hover:bg-slate-800 transition cursor-pointer"
+                                        title="Edit this add-on transaction"
+                                      >
+                                        <Edit3 className="h-3.5 w-3.5" />
+                                      </Link>
+                                      <Link
+                                        href={`${basePath}/${addon.id}`}
+                                        className="p-1.5 rounded-lg text-slate-400 hover:text-cyan-300 hover:bg-slate-800 transition"
+                                        title="View Add-on Details"
+                                      >
+                                        <ArrowUpRight className="h-3.5 w-3.5" />
+                                      </Link>
+                                    </div>
                                   </div>
                                 </div>
                               );
@@ -791,10 +837,10 @@ export function InteractiveTimelineView({
                               <Link
                                 href={`/${locale}/transactions/new?addonsForId=${tx.id}`}
                                 onClick={(e) => e.stopPropagation()}
-                                className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-cyan-400/90 hover:text-cyan-300 transition px-2.5 py-1 rounded-lg hover:bg-cyan-500/10 cursor-pointer border border-cyan-500/20 hover:border-cyan-500/40"
+                                className="inline-flex items-center gap-1.5 text-xs font-semibold text-cyan-400 hover:text-cyan-300 transition px-3 py-1.5 rounded-xl border border-dashed border-cyan-500/30 hover:border-cyan-500/60 hover:bg-cyan-500/10 cursor-pointer shadow-sm"
                               >
-                                <Plus className="h-3 w-3" />
-                                <span>+ Add another add-on</span>
+                                <Plus className="h-3.5 w-3.5" />
+                                <span>+ Attach another add-on</span>
                               </Link>
                             </div>
                           </div>

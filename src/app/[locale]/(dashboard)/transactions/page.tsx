@@ -101,7 +101,7 @@ export default async function TransactionsPage({ params }: TransactionsPageProps
         </div>
       </div>
 
-      <div className="rounded-3xl border border-slate-800 bg-slate-900/60 p-6 shadow-xl">
+      <div className="rounded-2xl sm:rounded-3xl border border-slate-800/80 bg-slate-900/40 backdrop-blur-md p-3.5 sm:p-6 shadow-2xl">
         <InteractiveTimelineView
           transactions={timelineItems}
           allTags={allTags}

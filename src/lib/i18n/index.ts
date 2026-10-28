@@ -46,7 +46,8 @@ export function formatLocalizedAmount(
   const minorStr = minor.toString().padStart(2, "0");
   const rawFormatted = `${major.toLocaleString("en-US")}.${minorStr}`;
 
-  const symbol = currency === "BDT" ? "৳" : currency === "USD" ? "$" : currency === "EUR" ? "€" : currency;
+  const safeCurrency = currency && currency !== "-" ? currency.toUpperCase() : "BDT";
+  const symbol = safeCurrency === "BDT" ? "৳" : safeCurrency === "USD" ? "$" : safeCurrency === "EUR" ? "€" : `${safeCurrency} `;
 
   let sign = "";
   if (typeof forcedSign === "string") {
@@ -59,10 +60,10 @@ export function formatLocalizedAmount(
     sign = isNegative ? "-" : "";
   }
 
-  if (locale === "bn") {
-    const banglaNum = toBanglaDigits(rawFormatted);
-    return `${sign}${symbol}${banglaNum}`;
-  }
+  // Ensure sign doesn't clash with symbol or produce double minuses
+  const cleanSign = sign === "-" || sign === "+" ? sign : "";
+  const banglaNum = toBanglaDigits(rawFormatted);
+  const formattedNum = locale === "bn" ? banglaNum : rawFormatted;
 
-  return `${sign}${symbol}${rawFormatted}`;
+  return `${cleanSign}${symbol}${formattedNum}`;
 }
