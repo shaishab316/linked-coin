@@ -4,10 +4,11 @@ import { notFound } from "next/navigation";
 import { requireUser } from "../../../../../features/auth/service";
 import { getTransactionById } from "../../../../../features/ledger/service";
 import { listAccounts } from "../../../../../features/accounts/service";
+import { listTags } from "../../../../../features/tags/service";
 import { ReverseTransactionDialog } from "../../../../../features/ledger/components/reverse-transaction-dialog";
 import { getDictionary, formatLocalizedAmount, type Locale } from "../../../../../lib/i18n";
 import { formatDateTime } from "../../../../../lib/dates/format";
-import { ArrowLeft, Clock, ShieldCheck, Tag as TagIcon, Wallet, User } from "lucide-react";
+import { ArrowLeft, Clock, ShieldCheck, Tag as TagIcon, Wallet, User, Edit3, Paperclip } from "lucide-react";
 
 interface TransactionDetailPageProps {
   params: Promise<{
@@ -24,11 +25,16 @@ export default async function LocalizedTransactionDetailPage({ params }: Transac
 
   let tx;
   let accounts;
+  let allTags: any[] = [];
   try {
-    [tx, accounts] = await Promise.all([
+    const [fetchedTx, fetchedAccounts, fetchedTags] = await Promise.all([
       getTransactionById(user.id, id),
       listAccounts(user.id),
+      listTags(user.id),
     ]);
+    tx = fetchedTx;
+    accounts = fetchedAccounts;
+    allTags = fetchedTags;
   } catch {
     notFound();
   }
@@ -48,7 +54,27 @@ export default async function LocalizedTransactionDetailPage({ params }: Transac
           <span>{t.common.back}</span>
         </Link>
 
-        {isReversible && <ReverseTransactionDialog transactionId={tx.id} />}
+        <div className="flex items-center gap-2">
+          {isReversible && (
+            <>
+              <Link
+                href={`/${locale}/transactions/new?addonsForId=${tx.id}`}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 text-xs font-semibold transition active:scale-95 cursor-pointer"
+              >
+                <Paperclip className="h-3.5 w-3.5" />
+                <span>+ Add-on</span>
+              </Link>
+              <Link
+                href={`/${locale}/transactions/new?id=${tx.id}`}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 text-xs font-semibold transition active:scale-95 cursor-pointer"
+              >
+                <Edit3 className="h-3.5 w-3.5" />
+                <span>{t.common.edit || "Edit"}</span>
+              </Link>
+            </>
+          )}
+          {isReversible && <ReverseTransactionDialog transactionId={tx.id} />}
+        </div>
       </div>
 
       {/* Main Info Card */}

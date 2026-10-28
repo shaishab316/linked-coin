@@ -18,8 +18,10 @@ import { decimalStringToMinor, validateDoubleEntryBalance } from "../../lib/mone
 import {
   createTransactionSchema,
   reverseTransactionSchema,
+  updateTransactionSchema,
   type CreateTransactionInput,
   type ReverseTransactionInput,
+  type UpdateTransactionData,
 } from "./validation";
 
 export interface TransactionDetail extends LedgerTransaction {
@@ -350,6 +352,15 @@ export async function createTransaction(
       });
     }
 
+    if (parsed.parentTransactionId) {
+      await tx.insert(transactionLinks).values({
+        userId,
+        fromTransactionId: createdTx.id,
+        toTransactionId: parsed.parentTransactionId,
+        linkType: "addon",
+      });
+    }
+
     // 4.1 Process addon transactions if any
     const createdAddons: LedgerTransaction[] = [];
     if (parsed.addons && parsed.addons.length > 0) {
@@ -622,6 +633,159 @@ export async function reverseTransaction(
       entries: insertedEntries,
       tags: [],
     };
+  });
+}
+
+export async function updateTransaction(
+  userId: string,
+  transactionId: string,
+  input: UpdateTransactionData,
+): Promise<TransactionDetail> {
+  return await db.transaction(async (tx) => {
+    // 1. Fetch original transaction
+    const [original] = await tx
+      .select()
+      .from(ledgerTransactions)
+      .where(and(eq(ledgerTransactions.id, transactionId), eq(ledgerTransactions.userId, userId)))
+      .limit(1);
+
+    if (!original) {
+      throw AppError.notFound("Transaction not found");
+    }
+
+    if (original.type === "reversal") {
+      throw AppError.validation("A reversal transaction cannot be edited");
+    }
+
+    if (original.reversedAt) {
+      throw AppError.conflict("This transaction has already been reversed and cannot be edited");
+    }
+
+    const updates: Partial<typeof ledgerTransactions.$inferInsert> = {};
+    let newAmountMinor = original.amountMinor;
+
+    if (input.description !== undefined && input.description.trim()) {
+      updates.description = input.description.trim();
+    }
+
+    if (input.notes !== undefined) {
+      updates.notes = input.notes ? input.notes.trim() : null;
+    }
+
+    if (input.occurredAt) {
+      updates.occurredAt = new Date(input.occurredAt);
+    }
+
+    if (input.amount) {
+      newAmountMinor = decimalStringToMinor(input.amount, original.currency);
+      if (newAmountMinor <= 0n) {
+        throw AppError.validation("Transaction amount must be strictly greater than zero");
+      }
+      updates.amountMinor = newAmountMinor;
+    }
+
+    if (input.personId !== undefined) {
+      updates.personId = input.personId;
+    }
+
+    // Update transaction record if there are changes
+    if (Object.keys(updates).length > 0) {
+      await tx
+        .update(ledgerTransactions)
+        .set(updates)
+        .where(eq(ledgerTransactions.id, original.id));
+    }
+
+    // Update account legs if provided
+    if (input.sourceAccountId) {
+      await tx
+        .update(ledgerEntries)
+        .set({ accountId: input.sourceAccountId })
+        .where(
+          and(
+            eq(ledgerEntries.transactionId, original.id),
+            eq(ledgerEntries.userId, userId),
+            eq(ledgerEntries.direction, "credit"),
+            sql`${ledgerEntries.accountId} IS NOT NULL`,
+          ),
+        );
+    }
+
+    if (input.destinationAccountId) {
+      await tx
+        .update(ledgerEntries)
+        .set({ accountId: input.destinationAccountId })
+        .where(
+          and(
+            eq(ledgerEntries.transactionId, original.id),
+            eq(ledgerEntries.userId, userId),
+            eq(ledgerEntries.direction, "debit"),
+            sql`${ledgerEntries.accountId} IS NOT NULL`,
+          ),
+        );
+    }
+
+    // If amount changed, update all entries belonging to this transaction to preserve double-entry equilibrium
+    if (input.amount && newAmountMinor !== original.amountMinor) {
+      await tx
+        .update(ledgerEntries)
+        .set({ amountMinor: newAmountMinor })
+        .where(
+          and(
+            eq(ledgerEntries.transactionId, original.id),
+            eq(ledgerEntries.userId, userId),
+          ),
+        );
+    }
+
+    // Update tags if provided
+    if (input.tagIds !== undefined) {
+      await tx
+        .delete(transactionTags)
+        .where(eq(transactionTags.transactionId, original.id));
+
+      if (input.tagIds.length > 0) {
+        const userTags = await tx
+          .select({ id: tags.id })
+          .from(tags)
+          .where(and(eq(tags.userId, userId), inArray(tags.id, input.tagIds)));
+
+        if (userTags.length > 0) {
+          await tx.insert(transactionTags).values(
+            userTags.map((t) => ({
+              transactionId: original.id,
+              tagId: t.id,
+            })),
+          );
+        }
+      }
+    }
+
+    // Append immutable financial event
+    await tx.insert(financialEvents).values({
+      userId,
+      transactionId: original.id,
+      eventType: "TRANSACTION_UPDATED",
+      payload: {
+        transactionId: original.id,
+        previous: {
+          description: original.description,
+          amountMinor: original.amountMinor.toString(),
+          occurredAt: original.occurredAt.toISOString(),
+          notes: original.notes,
+        },
+        updated: {
+          description: updates.description ?? original.description,
+          amountMinor: newAmountMinor.toString(),
+          occurredAt: (updates.occurredAt ?? original.occurredAt).toISOString(),
+          notes: updates.notes !== undefined ? updates.notes : original.notes,
+        },
+      },
+      occurredAt: new Date(),
+      idempotencyKey: `update_${original.id}_${crypto.randomUUID()}`,
+    });
+
+    return await getTransactionById(userId, original.id);
   });
 }
 

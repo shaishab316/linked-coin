@@ -22,6 +22,8 @@ import {
   Paperclip,
   CloudOff,
   CornerDownRight,
+  Edit3,
+  Plus,
 } from "lucide-react";
 import { RangeMergeToolbar } from "../batch/RangeMergeToolbar";
 import dayjs, { formatFromNow, formatDate } from "../../lib/date/dayjs";
@@ -572,7 +574,7 @@ export function InteractiveTimelineView({
                               </div>
                             </div>
 
-                            {/* Right: Amount & Expand Arrow */}
+                            {/* Right: Amount & Quick Edit & Expand Arrow */}
                             <div className="flex flex-col items-end justify-between shrink-0">
                               <span
                                 className={`text-base font-extrabold ${visual.amountColor} ${
@@ -587,12 +589,34 @@ export function InteractiveTimelineView({
                                 )}
                               </span>
 
-                              <div className="mt-2 text-slate-500 group-hover:text-slate-300 transition">
-                                {isExpanded ? (
-                                  <ChevronUp className="h-4 w-4" />
-                                ) : (
-                                  <ChevronDown className="h-4 w-4" />
+                              <div className="flex items-center gap-1.5 mt-2">
+                                {!isReversed && tx.type !== "reversal" && !isPending && (
+                                  <>
+                                    <Link
+                                      href={`/${locale}/transactions/new?addonsForId=${tx.id}`}
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="p-1.5 rounded-lg text-slate-500 hover:text-cyan-400 hover:bg-slate-800 transition cursor-pointer"
+                                      title="Add an add-on transaction to this transaction"
+                                    >
+                                      <Paperclip className="h-3.5 w-3.5" />
+                                    </Link>
+                                    <Link
+                                      href={`/${locale}/transactions/new?id=${tx.id}`}
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="p-1.5 rounded-lg text-slate-500 hover:text-amber-400 hover:bg-slate-800 transition cursor-pointer"
+                                      title="Edit transaction"
+                                    >
+                                      <Edit3 className="h-3.5 w-3.5" />
+                                    </Link>
+                                  </>
                                 )}
+                                <div className="text-slate-500 group-hover:text-slate-300 transition">
+                                  {isExpanded ? (
+                                    <ChevronUp className="h-4 w-4" />
+                                  ) : (
+                                    <ChevronDown className="h-4 w-4" />
+                                  )}
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -651,6 +675,26 @@ export function InteractiveTimelineView({
 
                               {/* Actions Footer */}
                               <div className="flex items-center justify-end gap-3 pt-1">
+                                {!isReversed && tx.type !== "reversal" && !isPending && (
+                                  <>
+                                    <Link
+                                      href={`/${locale}/transactions/new?addonsForId=${tx.id}`}
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="flex items-center gap-1 text-xs font-semibold text-cyan-400 hover:text-cyan-300 transition"
+                                    >
+                                      <Paperclip className="h-3.5 w-3.5" />
+                                      <span>+ Add-on</span>
+                                    </Link>
+                                    <Link
+                                      href={`/${locale}/transactions/new?id=${tx.id}`}
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="flex items-center gap-1 text-xs font-semibold text-amber-400 hover:text-amber-300 transition"
+                                    >
+                                      <Edit3 className="h-3.5 w-3.5" />
+                                      <span>{t.common.edit || "Edit"}</span>
+                                    </Link>
+                                  </>
+                                )}
                                 <Link
                                   href={`${basePath}/${tx.id}`}
                                   className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 underline"
@@ -695,8 +739,8 @@ export function InteractiveTimelineView({
                                     </div>
                                   </div>
 
-                                  {/* Right: Amount & Details */}
-                                  <div className="flex items-center gap-3 shrink-0">
+                                  {/* Right: Amount & Edit & Details */}
+                                  <div className="flex items-center gap-2 shrink-0">
                                     <span className="text-xs font-bold font-mono text-cyan-300">
                                       {formatLocalizedAmount(
                                         BigInt(addon.amountMinor.toString()),
@@ -705,6 +749,14 @@ export function InteractiveTimelineView({
                                         addonVisual.sign as any,
                                       )}
                                     </span>
+                                    <Link
+                                      href={`/${locale}/transactions/new?id=${addon.id}`}
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="p-1 rounded-lg text-slate-500 hover:text-amber-400 hover:bg-slate-800 transition cursor-pointer"
+                                      title="Edit this add-on transaction"
+                                    >
+                                      <Edit3 className="h-3 w-3" />
+                                    </Link>
                                     <Link
                                       href={`${basePath}/${addon.id}`}
                                       className="text-[11px] text-slate-500 hover:text-cyan-400 transition"
@@ -716,6 +768,18 @@ export function InteractiveTimelineView({
                                 </div>
                               );
                             })}
+
+                            {/* Quick Link to Add Another Add-on */}
+                            <div className="pt-1">
+                              <Link
+                                href={`/${locale}/transactions/new?addonsForId=${tx.id}`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-cyan-400/90 hover:text-cyan-300 transition px-2.5 py-1 rounded-lg hover:bg-cyan-500/10 cursor-pointer border border-cyan-500/20 hover:border-cyan-500/40"
+                              >
+                                <Plus className="h-3 w-3" />
+                                <span>+ Add another add-on</span>
+                              </Link>
+                            </div>
                           </div>
                         )}
                       </div>

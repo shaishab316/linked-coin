@@ -35,6 +35,7 @@ export const createTransactionSchema = z
     // Person (for loans and repayments)
     personId: z.string().uuid().optional().nullable(),
     linkedTransactionId: z.string().uuid().optional().nullable(),
+    parentTransactionId: z.string().uuid().optional().nullable(),
 
     // Tags
     tagIds: z.array(z.string().uuid()).optional().default([]),
@@ -149,6 +150,40 @@ export const reverseTransactionSchema = z.object({
   idempotencyKey: z.string().min(1).optional().default(() => crypto.randomUUID()),
 });
 
+export const updateTransactionSchema = z
+  .object({
+    description: z.string().min(1, "Description cannot be empty").max(255).optional(),
+    amount: z.string().min(1, "Amount cannot be empty").optional(),
+    notes: z.string().max(1000).optional().nullable(),
+    occurredAt: z.string().min(1, "Occurrence date is required").optional(),
+    sourceAccountId: z.string().uuid().optional().nullable(),
+    destinationAccountId: z.string().uuid().optional().nullable(),
+    personId: z.string().uuid().optional().nullable(),
+    tagIds: z.array(z.string().uuid()).optional(),
+    confirmationCode: z.string().min(1, "Confirmation code is required"),
+    expectedCode: z.string().min(1, "Expected confirmation code is missing"),
+  })
+  .refine(
+    (data) =>
+      data.confirmationCode.trim().toUpperCase() === data.expectedCode.trim().toUpperCase(),
+    {
+      message: "Confirmation code does not match. Please enter the exact 8-character verification code.",
+      path: ["confirmationCode"],
+    },
+  );
+
+export interface UpdateTransactionData {
+  description?: string;
+  amount?: string;
+  notes?: string | null;
+  occurredAt?: string;
+  sourceAccountId?: string | null;
+  destinationAccountId?: string | null;
+  personId?: string | null;
+  tagIds?: string[];
+}
+
 export type CreateTransactionInput = z.input<typeof createTransactionSchema>;
 export type ReverseTransactionInput = z.input<typeof reverseTransactionSchema>;
+export type UpdateTransactionInput = z.infer<typeof updateTransactionSchema>;
 export type ValidatedTransactionInput = z.output<typeof createTransactionSchema>;

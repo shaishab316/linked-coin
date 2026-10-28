@@ -50,7 +50,16 @@ export default async function LocalizedAccountDetailPage({ params }: AccountDeta
     notes: tx.notes,
     occurredAt: tx.occurredAt.toISOString(),
     reversedAt: tx.reversedAt?.toISOString() || null,
-    reversesTransactionId: tx.reversesTransactionId,
+    parentTransactionId: tx.parentTransactionId || null,
+    isAddon: !!tx.parentTransactionId,
+    addons: tx.addonTransactions?.map((a) => ({
+      id: a.id,
+      type: a.type,
+      amountMinor: a.amountMinor,
+      currency: a.currency,
+      description: a.description,
+      occurredAt: a.occurredAt.toISOString(),
+    })),
     accountName: account.name,
     tags: tx.tags.map((t) => ({ id: t.id, name: t.name })),
     entries: tx.entries.map((e) => ({

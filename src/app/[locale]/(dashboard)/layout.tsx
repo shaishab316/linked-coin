@@ -26,7 +26,7 @@ export default async function DashboardLayout({
           </div>
         </header>
 
-        <div className="p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
+        <div className="p-4 sm:p-6 lg:p-8 pb-24 md:pb-8 max-w-7xl w-full mx-auto">
           {children}
         </div>
       </main>
