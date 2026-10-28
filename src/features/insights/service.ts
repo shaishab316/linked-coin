@@ -1,5 +1,5 @@
 import { eq, and, sql, desc, gte, isNull } from "drizzle-orm";
-import { format, subDays, subWeeks, subMonths, subYears, startOfWeek, startOfMonth, startOfYear } from "date-fns";
+import { format, subHours, subDays, subWeeks, subMonths, subYears, startOfWeek, startOfMonth, startOfYear } from "date-fns";
 import { db } from "../../db";
 import {
   accounts,
@@ -13,11 +13,12 @@ import { listAccounts } from "../accounts/service";
 import { listPeople } from "../people/service";
 import { DEFAULT_CURRENCY } from "../../lib/money/money";
 
-export type GranularityPeriod = "day" | "week" | "month" | "year";
+export type GranularityPeriod = "hour" | "day" | "week" | "month" | "year";
 
 export interface GranularCashFlowPoint {
   key: string;       // e.g. "2026-10-27", "2026-10", "2026"
   label: string;     // e.g. "27 Oct", "This Week", "Oct 26", "2026"
+  periodLabel?: string; // e.g. "Today", "28 Oct", "Wed"
   incomeMinor: bigint;
   expenseMinor: bigint;
   netCashFlowMinor: bigint;
@@ -54,6 +55,7 @@ export interface DashboardInsights {
     netCashFlowMinor: bigint;
   }>;
   granularCashFlow: {
+    hour: GranularCashFlowSet;
     day: GranularCashFlowSet;
     week: GranularCashFlowSet;
     month: GranularCashFlowSet;
@@ -93,7 +95,10 @@ export async function getDashboardInsights(
     }
   }
 
-  // 2. Granular Cash Flow Queries (Day, Week, Month, Year) in parallel
+  // 2. Granular Cash Flow Queries (Hour, Day, Week, Month, Year) in parallel
+  const fortyEightHoursAgo = subHours(now, 47);
+  fortyEightHoursAgo.setMinutes(0, 0, 0);
+
   const fourteenDaysAgo = subDays(now, 13);
   fourteenDaysAgo.setHours(0, 0, 0, 0);
 
@@ -101,7 +106,24 @@ export async function getDashboardInsights(
   const twelveMonthsAgo = startOfMonth(subMonths(now, 11));
   const fourYearsAgo = startOfYear(subYears(now, 3));
 
-  const [dailyRows, weeklyRows, monthlyRows, yearlyRows] = await Promise.all([
+  const [hourlyRows, dailyRows, weeklyRows, monthlyRows, yearlyRows] = await Promise.all([
+    // Hourly transactions (last 48 hours for 24h view & comparison)
+    db
+      .select({
+        type: ledgerTransactions.type,
+        amountMinor: ledgerTransactions.amountMinor,
+        occurredAt: ledgerTransactions.occurredAt,
+      })
+      .from(ledgerTransactions)
+      .where(
+        and(
+          eq(ledgerTransactions.userId, userId),
+          eq(ledgerTransactions.currency, currency),
+          gte(ledgerTransactions.occurredAt, fortyEightHoursAgo),
+          isNull(ledgerTransactions.reversedAt),
+        ),
+      ),
+
     // Daily (last 14 days)
     db
       .select({
@@ -178,6 +200,58 @@ export async function getDashboardInsights(
       .groupBy(sql`to_char(${ledgerTransactions.occurredAt}, 'YYYY')`)
       .orderBy(sql`to_char(${ledgerTransactions.occurredAt}, 'YYYY')`),
   ]);
+
+  // Construct continuous Hourly points & comparison (This Hour vs Previous Hour)
+  const hourlyMap = new Map<string, { income: bigint; expense: bigint }>();
+  for (const row of hourlyRows) {
+    const key = format(row.occurredAt, "yyyy-MM-dd HH:00");
+    const existing = hourlyMap.get(key) || { income: 0n, expense: 0n };
+    if (row.type === "income") {
+      existing.income += row.amountMinor;
+    } else if (row.type === "expense") {
+      existing.expense += row.amountMinor;
+    }
+    hourlyMap.set(key, existing);
+  }
+
+  const hourPoints: GranularCashFlowPoint[] = [];
+  for (let i = 23; i >= 0; i--) {
+    const h = subHours(now, i);
+    const key = format(h, "yyyy-MM-dd HH:00");
+    const label = format(h, "h a");
+    const isToday = format(h, "yyyy-MM-dd") === format(now, "yyyy-MM-dd");
+    const periodLabel = isToday ? "Today" : format(h, "d MMM");
+    const val = hourlyMap.get(key) || { income: 0n, expense: 0n };
+    hourPoints.push({
+      key,
+      label,
+      periodLabel,
+      incomeMinor: val.income,
+      expenseMinor: val.expense,
+      netCashFlowMinor: val.income - val.expense,
+    });
+  }
+
+  const thisHourKey = format(now, "yyyy-MM-dd HH:00");
+  const prevHourKey = format(subHours(now, 1), "yyyy-MM-dd HH:00");
+  const thisHourVal = hourlyMap.get(thisHourKey) || { income: 0n, expense: 0n };
+  const prevHourVal = hourlyMap.get(prevHourKey) || { income: 0n, expense: 0n };
+  const hourComparison: GranularComparison = {
+    current: {
+      label: "This Hour",
+      periodLabel: format(now, "d MMM, h a"),
+      incomeMinor: thisHourVal.income,
+      expenseMinor: thisHourVal.expense,
+      netMinor: thisHourVal.income - thisHourVal.expense,
+    },
+    previous: {
+      label: "Prev Hour",
+      periodLabel: format(subHours(now, 1), "d MMM, h a"),
+      incomeMinor: prevHourVal.income,
+      expenseMinor: prevHourVal.expense,
+      netMinor: prevHourVal.income - prevHourVal.expense,
+    },
+  };
 
   // Construct continuous Daily points & comparison (Today vs Yesterday)
   const dailyMap = new Map(
@@ -412,6 +486,7 @@ export async function getDashboardInsights(
     netPositionByCurrency,
     monthlyCashFlow,
     granularCashFlow: {
+      hour: { points: hourPoints, comparison: hourComparison },
       day: { points: dayPoints, comparison: dayComparison },
       week: { points: weekPoints, comparison: weekComparison },
       month: { points: monthPoints, comparison: monthComparison },

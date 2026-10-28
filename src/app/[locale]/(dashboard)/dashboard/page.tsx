@@ -228,15 +228,34 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Chart 1: Cash Flow In vs Out (2 Cols) */}
         <div className="lg:col-span-2 rounded-3xl border border-slate-800 bg-slate-900/70 p-6 shadow-xl space-y-2">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-base font-bold text-slate-100">{t.dashboard.cashFlowChartTitle}</h3>
-              <p className="text-xs text-slate-400">{t.dashboard.cashFlowSubtitle}</p>
-            </div>
-          </div>
-
           <CashFlowChart
             granularData={{
+              hour: {
+                points: insights.granularCashFlow.hour.points.map((p) => ({
+                  key: p.key,
+                  label: p.label,
+                  periodLabel: p.periodLabel,
+                  incomeMinor: p.incomeMinor.toString(),
+                  expenseMinor: p.expenseMinor.toString(),
+                  netMinor: p.netCashFlowMinor.toString(),
+                })),
+                comparison: {
+                  current: {
+                    label: insights.granularCashFlow.hour.comparison.current.label,
+                    periodLabel: insights.granularCashFlow.hour.comparison.current.periodLabel,
+                    incomeMinor: insights.granularCashFlow.hour.comparison.current.incomeMinor.toString(),
+                    expenseMinor: insights.granularCashFlow.hour.comparison.current.expenseMinor.toString(),
+                    netMinor: insights.granularCashFlow.hour.comparison.current.netMinor.toString(),
+                  },
+                  previous: {
+                    label: insights.granularCashFlow.hour.comparison.previous.label,
+                    periodLabel: insights.granularCashFlow.hour.comparison.previous.periodLabel,
+                    incomeMinor: insights.granularCashFlow.hour.comparison.previous.incomeMinor.toString(),
+                    expenseMinor: insights.granularCashFlow.hour.comparison.previous.expenseMinor.toString(),
+                    netMinor: insights.granularCashFlow.hour.comparison.previous.netMinor.toString(),
+                  },
+                },
+              },
               day: {
                 points: insights.granularCashFlow.day.points.map((p) => ({
                   key: p.key,

@@ -31,12 +31,13 @@ import {
   CandlestickChart,
 } from "lucide-react";
 
-export type GranularityPeriod = "day" | "week" | "month" | "year";
+export type GranularityPeriod = "hour" | "day" | "week" | "month" | "year";
 export type ChartVisualizationType = "bar" | "area" | "trading";
 
 export interface GranularPointProps {
   key: string;
   label: string;
+  periodLabel?: string;
   incomeMinor: string;
   expenseMinor: string;
   netMinor: string;
@@ -73,6 +74,7 @@ export interface MonthlyCashFlowPoint {
 
 interface CashFlowChartProps {
   granularData?: {
+    hour?: GranularCashFlowPropSet;
     day: GranularCashFlowPropSet;
     week: GranularCashFlowPropSet;
     month: GranularCashFlowPropSet;
@@ -80,17 +82,35 @@ interface CashFlowChartProps {
   };
   data?: MonthlyCashFlowPoint[];
   currency?: string;
+  initialPeriod?: GranularityPeriod;
 }
 
 export function CashFlowChart({
   granularData,
   data: fallbackData = [],
   currency = "BDT",
+  initialPeriod = "month",
 }: CashFlowChartProps) {
   const { locale, t } = useI18n();
-  const [period, setPeriod] = useState<GranularityPeriod>("month");
+  const [period, setPeriod] = useState<GranularityPeriod>(initialPeriod);
   const [chartType, setChartType] = useState<ChartVisualizationType>("bar");
   const [isComparing, setIsComparing] = useState<boolean>(false);
+
+  // Dynamic Title based on active Period tab
+  const dynamicTitle = useMemo(() => {
+    switch (period) {
+      case "hour":
+        return t.dashboard.cashFlowChartTitleHour || "Hourly Cash Flow";
+      case "day":
+        return t.dashboard.cashFlowChartTitleDay || "Daily Cash Flow";
+      case "week":
+        return t.dashboard.cashFlowChartTitleWeek || "Weekly Cash Flow";
+      case "month":
+        return t.dashboard.cashFlowChartTitleMonth || "Monthly Cash Flow";
+      case "year":
+        return t.dashboard.cashFlowChartTitleYear || "Yearly Cash Flow";
+    }
+  }, [period, t]);
 
   // Determine active dataset
   const activeGranular = granularData ? granularData[period] : null;
@@ -98,6 +118,8 @@ export function CashFlowChart({
   // Comparison labels
   const compareButtonLabel = useMemo(() => {
     switch (period) {
+      case "hour":
+        return t.dashboard.vsPrevHour || "vs Prev Hour";
       case "day":
         return t.dashboard.vsYesterday || "vs Yesterday";
       case "week":
@@ -117,6 +139,7 @@ export function CashFlowChart({
         const outVal = Number(BigInt(p.expenseMinor)) / 100;
         return {
           name: p.label,
+          periodLabel: p.periodLabel,
           inflow: inVal,
           outflow: outVal,
           netflow: inVal - outVal,
@@ -274,16 +297,26 @@ export function CashFlowChart({
 
   return (
     <div className="space-y-4 pt-1">
+      {/* 0. Dynamic Title and Subtitle */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-base font-bold text-slate-100">{dynamicTitle}</h3>
+          <p className="text-xs text-slate-400">{t.dashboard.cashFlowSubtitle}</p>
+        </div>
+      </div>
+
       {/* 1. Header Toolbar with Filter Pills, Chart View Switcher & Compare Switcher */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
         {/* Left: Period Granularity Buttons & Chart Type Switcher */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Period Pills: Day | Week | Month | Year */}
+          {/* Period Pills: Hour | Day | Week | Month | Year */}
           <div className="flex items-center p-1 rounded-2xl bg-slate-950/70 border border-slate-800 text-xs font-semibold">
-            {(["day", "week", "month", "year"] as GranularityPeriod[]).map((p) => {
+            {(["hour", "day", "week", "month", "year"] as GranularityPeriod[]).map((p) => {
               const isActive = period === p;
               const label =
-                p === "day"
+                p === "hour"
+                  ? t.dashboard.periodHour || "Hour"
+                  : p === "day"
                   ? t.dashboard.periodDay || "Day"
                   : p === "week"
                   ? t.dashboard.periodWeek || "Week"
@@ -496,9 +529,10 @@ export function CashFlowChart({
                 <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
                 <XAxis
                   dataKey="name"
-                  tick={{ fill: "#94a3b8", fontSize: 12 }}
+                  tick={{ fill: "#94a3b8", fontSize: period === "hour" ? 10 : 12 }}
                   axisLine={{ stroke: "#334155" }}
                   tickLine={false}
+                  interval={period === "hour" ? "preserveStartEnd" : 0}
                 />
                 <YAxis
                   tick={{ fill: "#94a3b8", fontSize: 12 }}
@@ -527,14 +561,14 @@ export function CashFlowChart({
                   name="inflow"
                   fill="#10B981"
                   radius={[6, 6, 0, 0]}
-                  maxBarSize={isComparing ? 48 : 36}
+                  maxBarSize={isComparing ? 48 : period === "hour" ? 20 : 36}
                 />
                 <Bar
                   dataKey="outflow"
                   name="outflow"
                   fill="#F43F5E"
                   radius={[6, 6, 0, 0]}
-                  maxBarSize={isComparing ? 48 : 36}
+                  maxBarSize={isComparing ? 48 : period === "hour" ? 20 : 36}
                 />
               </BarChart>
             )}
@@ -558,9 +592,10 @@ export function CashFlowChart({
                 <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
                 <XAxis
                   dataKey="name"
-                  tick={{ fill: "#94a3b8", fontSize: 12 }}
+                  tick={{ fill: "#94a3b8", fontSize: period === "hour" ? 10 : 12 }}
                   axisLine={{ stroke: "#334155" }}
                   tickLine={false}
+                  interval={period === "hour" ? "preserveStartEnd" : 0}
                 />
                 <YAxis
                   tick={{ fill: "#94a3b8", fontSize: 12 }}
@@ -625,9 +660,10 @@ export function CashFlowChart({
                 <ReferenceLine y={0} stroke="#64748b" strokeDasharray="3 3" />
                 <XAxis
                   dataKey="name"
-                  tick={{ fill: "#94a3b8", fontSize: 12 }}
+                  tick={{ fill: "#94a3b8", fontSize: period === "hour" ? 10 : 12 }}
                   axisLine={{ stroke: "#334155" }}
                   tickLine={false}
+                  interval={period === "hour" ? "preserveStartEnd" : 0}
                 />
                 <YAxis
                   tick={{ fill: "#94a3b8", fontSize: 12 }}
