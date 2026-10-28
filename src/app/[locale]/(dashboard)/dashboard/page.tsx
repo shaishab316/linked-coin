@@ -413,15 +413,15 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
       )}
 
       {/* 5. Interactive Activity Timeline */}
-      <div className="rounded-3xl border border-slate-800 bg-slate-900/60 p-6 shadow-xl space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
-          <div>
-            <h3 className="text-lg font-bold text-slate-100">{t.dashboard.recentTimeline}</h3>
-            <p className="text-xs text-slate-400">{t.timeline.subtitle}</p>
+      <div className="rounded-2xl sm:rounded-3xl border border-slate-800 bg-slate-900/60 p-3 sm:p-6 shadow-xl space-y-4 sm:space-y-6">
+        <div className="flex items-center justify-between gap-2 border-b border-slate-800/80 pb-3 sm:pb-4">
+          <div className="min-w-0">
+            <h3 className="text-base sm:text-lg font-bold text-slate-100 truncate">{t.dashboard.recentTimeline}</h3>
+            <p className="text-[11px] sm:text-xs text-slate-400 truncate">{t.timeline.subtitle}</p>
           </div>
           <Link
             href={`/${locale}/transactions`}
-            className="text-xs font-semibold text-emerald-400 hover:text-emerald-300"
+            className="text-[11px] sm:text-xs font-semibold text-emerald-400 hover:text-emerald-300 whitespace-nowrap shrink-0"
           >
             {t.common.viewAll} {t.nav.transactions} →
           </Link>

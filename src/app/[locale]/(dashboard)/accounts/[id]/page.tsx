@@ -144,7 +144,7 @@ export default async function LocalizedAccountDetailPage({ params }: AccountDeta
       </div>
 
       {/* Account Transactions in Timeline View */}
-      <div className="rounded-3xl border border-slate-800 bg-slate-900/60 p-6 shadow-xl space-y-4">
+      <div className="rounded-2xl sm:rounded-3xl border border-slate-800 bg-slate-900/60 p-3 sm:p-6 shadow-xl space-y-3 sm:space-y-4">
         <h3 className="text-lg font-bold text-slate-100">{t.timeline.title}</h3>
         <InteractiveTimelineView
           transactions={timelineItems}

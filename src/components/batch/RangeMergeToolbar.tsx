@@ -101,17 +101,17 @@ export function RangeMergeToolbar({
   return (
     <>
       {/* Sticky Bottom Batch Toolbar */}
-      <div className="fixed bottom-6 left-1/2 z-40 -translate-x-1/2 w-[92%] max-w-3xl animate-in fade-in slide-in-from-bottom-5 duration-300">
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-500/30 bg-slate-900/95 p-3.5 px-5 shadow-2xl backdrop-blur-xl">
-          <div className="flex items-center gap-3">
-            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 font-bold text-sm">
+      <div className="fixed bottom-4 sm:bottom-6 left-1/2 z-40 -translate-x-1/2 w-[95%] sm:w-[92%] max-w-3xl animate-in fade-in slide-in-from-bottom-5 duration-300">
+        <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 rounded-xl sm:rounded-2xl border border-emerald-500/30 bg-slate-900/95 p-2 px-3 sm:p-3.5 sm:px-5 shadow-2xl backdrop-blur-xl">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <span className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-lg sm:rounded-xl bg-emerald-500/20 text-emerald-400 font-bold text-xs sm:text-sm">
               {selectedIds.length}
             </span>
             <div>
-              <p className="text-xs font-semibold text-slate-200">
+              <p className="text-[11px] sm:text-xs font-semibold text-slate-200">
                 {selectedIds.length} {t.batch.selectedCount}
               </p>
-              <p className="text-xs text-slate-400">
+              <p className="text-[10px] sm:text-xs text-slate-400">
                 {t.batch.netTotal}:{" "}
                 <span className={`font-bold ${netMinor >= 0n ? "text-emerald-400" : "text-rose-400"}`}>
                   {formatLocalizedAmount(netMinor, currency, locale, true)}
@@ -120,30 +120,30 @@ export function RangeMergeToolbar({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <button
               onClick={() => setIsModalOpen(true)}
-              className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-lg shadow-emerald-900/30 hover:bg-emerald-500 transition active:scale-95 cursor-pointer"
+              className="flex items-center gap-1 sm:gap-1.5 rounded-lg sm:rounded-xl bg-emerald-600 px-2.5 sm:px-3.5 py-1 sm:py-1.5 text-[11px] sm:text-xs font-semibold text-white shadow-lg shadow-emerald-900/30 hover:bg-emerald-500 transition active:scale-95 cursor-pointer"
             >
-              <Layers className="h-3.5 w-3.5" />
+              <Layers className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
               {t.batch.mergeSummary}
             </button>
 
             <button
               onClick={handleExportSelectedCsv}
-              className="flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700 transition active:scale-95 cursor-pointer"
+              className="flex items-center gap-1 sm:gap-1.5 rounded-lg sm:rounded-xl border border-slate-700 bg-slate-800 px-2.5 sm:px-3 py-1 sm:py-1.5 text-[11px] sm:text-xs font-medium text-slate-200 hover:bg-slate-700 transition active:scale-95 cursor-pointer"
               title={t.batch.exportCsv}
             >
-              <Download className="h-3.5 w-3.5" />
+              <Download className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
               <span className="hidden sm:inline">{t.batch.exportCsv}</span>
             </button>
 
             <button
               onClick={onClearSelection}
-              className="flex items-center justify-center rounded-xl p-1.5 text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition cursor-pointer"
+              className="flex items-center justify-center rounded-lg sm:rounded-xl p-1 sm:p-1.5 text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition cursor-pointer"
               title={t.batch.clearSelection}
             >
-              <X className="h-4 w-4" />
+              <X className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             </button>
           </div>
         </div>
