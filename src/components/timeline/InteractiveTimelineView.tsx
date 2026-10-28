@@ -126,7 +126,18 @@ export function InteractiveTimelineView({
   // Merge server props with offline pending items seamlessly
   const allMergedTransactions = useMemo(() => {
     const existingIds = new Set(transactions.map((t) => t.id));
-    const uniquePending = offlinePending.filter((p) => !existingIds.has(p.id));
+    const uniquePending = offlinePending.filter((p) => {
+      if (existingIds.has(p.id)) return false;
+      // Deduplicate if already present on server (e.g. synced transaction)
+      const isDuplicateOfServer = transactions.some(
+        (st) =>
+          st.description === p.description &&
+          st.amountMinor === p.amountMinor &&
+          st.currency === p.currency &&
+          Math.abs(new Date(st.occurredAt).getTime() - new Date(p.occurredAt).getTime()) < 60000,
+      );
+      return !isDuplicateOfServer;
+    });
     return [...uniquePending, ...transactions];
   }, [transactions, offlinePending]);
 
@@ -134,27 +145,33 @@ export function InteractiveTimelineView({
   const { filtered, groupedByDate, sortedDateKeys, parentAddonMap } = useMemo(() => {
     const addonMap = new Map<string, TimelineAddonItem[]>();
 
-    for (const tx of allMergedTransactions) {
-      if (tx.addons && tx.addons.length > 0) {
-        const list = addonMap.get(tx.id) || [];
-        addonMap.set(tx.id, [...list, ...tx.addons]);
+    const addAddon = (parentId: string, addon: TimelineAddonItem) => {
+      const existing = addonMap.get(parentId) || [];
+      if (!existing.some((a) => a.id === addon.id)) {
+        addonMap.set(parentId, [...existing, addon]);
       }
-      if (tx.parentTransactionId) {
-        const list = addonMap.get(tx.parentTransactionId) || [];
-        if (!list.some((a) => a.id === tx.id)) {
-          list.push({
-            id: tx.id,
-            type: tx.type,
-            amountMinor: tx.amountMinor,
-            currency: tx.currency,
-            description: tx.description,
-            notes: tx.notes,
-            occurredAt: tx.occurredAt,
-            tags: tx.tags,
-            accountName: tx.accountName,
-          });
-          addonMap.set(tx.parentTransactionId, list);
+    };
+
+    for (const tx of allMergedTransactions) {
+      // 1. If parent has compiled addons
+      if (tx.addons && tx.addons.length > 0) {
+        for (const a of tx.addons) {
+          addAddon(tx.id, a);
         }
+      }
+      // 2. If tx is an addon pointing to a parent
+      if (tx.parentTransactionId) {
+        addAddon(tx.parentTransactionId, {
+          id: tx.id,
+          type: tx.type,
+          amountMinor: tx.amountMinor,
+          currency: tx.currency,
+          description: tx.description,
+          notes: tx.notes,
+          occurredAt: tx.occurredAt,
+          tags: tx.tags,
+          accountName: tx.accountName,
+        });
       }
     }
 

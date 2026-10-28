@@ -207,10 +207,12 @@ export async function executeTransactionQuery(
   for (const link of addonLinks) {
     parentByAddonId.set(link.addonId, link.parentId);
     const list = addonIdsByParentId.get(link.parentId) || [];
-    list.push(link.addonId);
-    addonIdsByParentId.set(link.parentId, list);
+    if (!list.includes(link.addonId)) {
+      list.push(link.addonId);
+      addonIdsByParentId.set(link.parentId, list);
+    }
 
-    if (!txIds.includes(link.addonId)) {
+    if (!txIds.includes(link.addonId) && !externalAddonIdsToFetch.includes(link.addonId)) {
       externalAddonIdsToFetch.push(link.addonId);
     }
   }
