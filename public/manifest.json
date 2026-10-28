@@ -3,6 +3,8 @@
   "short_name": "LinkedCoin",
   "description": "Offline-first personal finance and financial history management",
   "start_url": "/",
+  "scope": "/",
+  "id": "/",
   "display": "standalone",
   "background_color": "#090d16",
   "theme_color": "#059669",

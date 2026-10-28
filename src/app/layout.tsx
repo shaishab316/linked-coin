@@ -21,6 +21,7 @@ export default function RootLayout({
       <head>
         <meta name="theme-color" content="#059669" />
         <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+        <link rel="manifest" href="/manifest.json" />
       </head>
       <body className="bg-[#090d16] text-slate-100 antialiased selection:bg-emerald-500 selection:text-white">
         {children}
@@ -28,9 +29,14 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{
             __html: `
               if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
-                window.addEventListener('load', () => {
+                const registerSw = () => {
                   navigator.serviceWorker.register('/sw.js').catch(console.error);
-                });
+                };
+                if (document.readyState === 'complete') {
+                  registerSw();
+                } else {
+                  window.addEventListener('load', registerSw);
+                }
               }
             `,
           }}
