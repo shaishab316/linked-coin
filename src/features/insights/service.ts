@@ -69,6 +69,11 @@ export interface DashboardInsights {
   }>;
   totalReceivablesMinor: bigint;
   totalPayablesMinor: bigint;
+  rawHourlyTransactions: Array<{
+    type: string;
+    amountMinor: string;
+    occurredAt: string;
+  }>;
 }
 
 export async function getDashboardInsights(
@@ -495,5 +500,10 @@ export async function getDashboardInsights(
     spendingByTag: tagList,
     totalReceivablesMinor,
     totalPayablesMinor,
+    rawHourlyTransactions: hourlyRows.map((r) => ({
+      type: r.type,
+      amountMinor: r.amountMinor.toString(),
+      occurredAt: r.occurredAt.toISOString(),
+    })),
   };
 }

@@ -229,6 +229,7 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
         {/* Chart 1: Cash Flow In vs Out (2 Cols) */}
         <div className="lg:col-span-2 rounded-3xl border border-slate-800 bg-slate-900/70 p-6 shadow-xl space-y-2">
           <CashFlowChart
+            rawTransactions={insights.rawHourlyTransactions}
             granularData={{
               hour: {
                 points: insights.granularCashFlow.hour.points.map((p) => ({

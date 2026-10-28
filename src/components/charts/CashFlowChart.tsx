@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   ResponsiveContainer,
   BarChart,
@@ -18,6 +18,7 @@ import {
 } from "recharts";
 import { useI18n } from "../../lib/i18n/context";
 import { formatLocalizedAmount } from "../../lib/i18n";
+import { localDb } from "../../offline/database";
 import {
   TrendingUp,
   TrendingDown,
@@ -80,6 +81,11 @@ interface CashFlowChartProps {
     month: GranularCashFlowPropSet;
     year: GranularCashFlowPropSet;
   };
+  rawTransactions?: Array<{
+    type: string;
+    amountMinor: string;
+    occurredAt: string;
+  }>;
   data?: MonthlyCashFlowPoint[];
   currency?: string;
   initialPeriod?: GranularityPeriod;
@@ -87,6 +93,7 @@ interface CashFlowChartProps {
 
 export function CashFlowChart({
   granularData,
+  rawTransactions,
   data: fallbackData = [],
   currency = "BDT",
   initialPeriod = "month",
@@ -95,6 +102,145 @@ export function CashFlowChart({
   const [period, setPeriod] = useState<GranularityPeriod>(initialPeriod);
   const [chartType, setChartType] = useState<ChartVisualizationType>("bar");
   const [isComparing, setIsComparing] = useState<boolean>(false);
+  const [isMounted, setIsMounted] = useState(false);
+  const [offlinePending, setOfflinePending] = useState<
+    Array<{ type: string; amountMinor: string; occurredAt: string }>
+  >([]);
+
+  useEffect(() => {
+    setIsMounted(true);
+    async function loadOffline() {
+      if (typeof window === "undefined" || !localDb) return;
+      try {
+        const pending = await localDb.transactions.where("syncStatus").equals("pending").toArray();
+        if (pending && pending.length > 0) {
+          setOfflinePending(
+            pending.map((p) => ({
+              type: p.type,
+              amountMinor: p.amountMinor || "0",
+              occurredAt: p.occurredAt,
+            })),
+          );
+        }
+      } catch (err) {
+        console.warn("Could not load localDb pending transactions:", err);
+      }
+    }
+    loadOffline();
+  }, []);
+
+  // Browser-local timezone hourly aggregation
+  const clientHourlyGranular = useMemo(() => {
+    if (!isMounted && granularData?.hour) {
+      return granularData.hour;
+    }
+
+    const allTxs = [...(rawTransactions || []), ...offlinePending];
+    const now = new Date();
+
+    // Map each transaction into the user's browser-local hour: "YYYY-MM-DD HH:00"
+    const hourlyMap = new Map<string, { income: bigint; expense: bigint }>();
+
+    for (const tx of allTxs) {
+      const d = new Date(tx.occurredAt);
+      if (isNaN(d.getTime())) continue;
+
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      const hour = String(d.getHours()).padStart(2, "0");
+      const key = `${year}-${month}-${day} ${hour}:00`;
+
+      const amount = BigInt(tx.amountMinor || "0");
+      const existing = hourlyMap.get(key) || { income: 0n, expense: 0n };
+      if (tx.type === "income") {
+        existing.income += amount;
+      } else if (tx.type === "expense") {
+        existing.expense += amount;
+      }
+      hourlyMap.set(key, existing);
+    }
+
+    // 24 hourly buckets ending at current browser hour
+    const currentHour = new Date(now);
+    currentHour.setMinutes(0, 0, 0);
+
+    const points: GranularPointProps[] = [];
+    for (let i = 23; i >= 0; i--) {
+      const h = new Date(currentHour.getTime() - i * 60 * 60 * 1000);
+      const year = h.getFullYear();
+      const month = String(h.getMonth() + 1).padStart(2, "0");
+      const day = String(h.getDate()).padStart(2, "0");
+      const hourNum = h.getHours();
+      const hourStr = String(hourNum).padStart(2, "0");
+      const key = `${year}-${month}-${day} ${hourStr}:00`;
+
+      // 12-hour local format: e.g. "11 AM", "12 PM", "1 PM"
+      const ampm = hourNum >= 12 ? "PM" : "AM";
+      const h12 = hourNum % 12 || 12;
+      const label = `${h12} ${ampm}`;
+
+      const isToday =
+        h.getFullYear() === now.getFullYear() &&
+        h.getMonth() === now.getMonth() &&
+        h.getDate() === now.getDate();
+      const periodLabel = isToday
+        ? "Today"
+        : h.toLocaleDateString(locale === "bn" ? "bn-BD" : "en-US", { month: "short", day: "numeric" });
+
+      const val = hourlyMap.get(key) || { income: 0n, expense: 0n };
+      const net = val.income - val.expense;
+
+      points.push({
+        key,
+        label,
+        periodLabel,
+        incomeMinor: val.income.toString(),
+        expenseMinor: val.expense.toString(),
+        netMinor: net.toString(),
+      });
+    }
+
+    // Comparison: This Hour vs Prev Hour in local timezone
+    const thisHourDate = currentHour;
+    const thisYear = thisHourDate.getFullYear();
+    const thisMonth = String(thisHourDate.getMonth() + 1).padStart(2, "0");
+    const thisDay = String(thisHourDate.getDate()).padStart(2, "0");
+    const thisH = String(thisHourDate.getHours()).padStart(2, "0");
+    const thisKey = `${thisYear}-${thisMonth}-${thisDay} ${thisH}:00`;
+
+    const prevHourDate = new Date(currentHour.getTime() - 60 * 60 * 1000);
+    const prevYear = prevHourDate.getFullYear();
+    const prevMonth = String(prevHourDate.getMonth() + 1).padStart(2, "0");
+    const prevDay = String(prevHourDate.getDate()).padStart(2, "0");
+    const prevH = String(prevHourDate.getHours()).padStart(2, "0");
+    const prevKey = `${prevYear}-${prevMonth}-${prevDay} ${prevH}:00`;
+
+    const thisVal = hourlyMap.get(thisKey) || { income: 0n, expense: 0n };
+    const prevVal = hourlyMap.get(prevKey) || { income: 0n, expense: 0n };
+
+    const thisHourLabel = `${thisHourDate.getHours() % 12 || 12} ${thisHourDate.getHours() >= 12 ? "PM" : "AM"}`;
+    const prevHourLabel = `${prevHourDate.getHours() % 12 || 12} ${prevHourDate.getHours() >= 12 ? "PM" : "AM"}`;
+
+    const comparison: GranularComparisonProps = {
+      current: {
+        label: "This Hour",
+        periodLabel: `${thisHourDate.toLocaleDateString(locale === "bn" ? "bn-BD" : "en-US", { day: "numeric", month: "short" })}, ${thisHourLabel}`,
+        incomeMinor: thisVal.income.toString(),
+        expenseMinor: thisVal.expense.toString(),
+        netMinor: (thisVal.income - thisVal.expense).toString(),
+      },
+      previous: {
+        label: "Prev Hour",
+        periodLabel: `${prevHourDate.toLocaleDateString(locale === "bn" ? "bn-BD" : "en-US", { day: "numeric", month: "short" })}, ${prevHourLabel}`,
+        incomeMinor: prevVal.income.toString(),
+        expenseMinor: prevVal.expense.toString(),
+        netMinor: (prevVal.income - prevVal.expense).toString(),
+      },
+    };
+
+    return { points, comparison };
+  }, [rawTransactions, offlinePending, isMounted, granularData?.hour, locale]);
 
   // Dynamic Title based on active Period tab
   const dynamicTitle = useMemo(() => {
@@ -112,8 +258,13 @@ export function CashFlowChart({
     }
   }, [period, t]);
 
-  // Determine active dataset
-  const activeGranular = granularData ? granularData[period] : null;
+  // Determine active dataset (uses browser-local timezone for hour)
+  const activeGranular = useMemo(() => {
+    if (period === "hour" && isMounted && clientHourlyGranular) {
+      return clientHourlyGranular;
+    }
+    return granularData ? granularData[period] : null;
+  }, [period, isMounted, clientHourlyGranular, granularData]);
 
   // Comparison labels
   const compareButtonLabel = useMemo(() => {
